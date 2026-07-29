@@ -22,13 +22,16 @@ import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 
 export default function App() {
+  // Set basename for GitHub Pages deployment
+  const basename = import.meta.env.BASE_URL || '/';
+
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <I18nProvider>
         <UserProvider>
           <InquiryProvider>
             <CartProvider>
-              <BrowserRouter>
+              <BrowserRouter basename={basename}>
                 <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
                   {/* Site-wide cosmic backdrop */}
                   <div className="pointer-events-none fixed inset-0 z-0 starfield twinkle" />
