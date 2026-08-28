@@ -41,13 +41,13 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     // ---- Lights ----
     // Key light from the LEFT so shadow/terminator falls on the RIGHT
     // Dark mode: dramatic crescent. Light mode: softer but still visible shadow for depth.
-    const key = new THREE.DirectionalLight(0xffffff, isLight ? 2.5 : 0.95);
+    const key = new THREE.DirectionalLight(0xffffff, isLight ? 2.15 : 0.95);
     key.position.set(-4.5, 1.8, 2.8);
     scene.add(key);
-    scene.add(new THREE.AmbientLight(0xffffff, isLight ? 0.5 : 0.05));
+    scene.add(new THREE.AmbientLight(0xffffff, isLight ? 1.15 : 0.05));
     if (isLight) {
-      // Subtle fill from right to prevent pure black shadow in light mode
-      const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+      // Keep the daylight hemisphere readable against the white page.
+      const fill = new THREE.DirectionalLight(0xd8efff, 0.75);
       fill.position.set(3, 0, 2);
       scene.add(fill);
     }
@@ -61,8 +61,10 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       map: tex,
       bumpMap: tex,
       bumpScale: 0.02,
-      color: isLight ? 0xffffff : 0x74808e,
-      roughness: isLight ? 0.85 : 1.0,
+      color: isLight ? 0xf5fbff : 0x74808e,
+      emissive: isLight ? 0x284f65 : 0x000000,
+      emissiveIntensity: isLight ? 0.42 : 0,
+      roughness: isLight ? 0.8 : 1.0,
       metalness: 0.0,
     });
 
@@ -85,6 +87,16 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     // Reduced segment count from 160 to 80 for better initial performance
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(1.6, 80, 80), sphereMat);
     globe.add(sphere);
+
+    // A tight Fresnel rim gives the planet a soft optical glow without creating
+    // the large gray shell that previously surrounded the globe.
+    const atmosphereGlowMaterial = createAtmosphereGlowMaterial(isLight);
+    const atmosphereGlow = new THREE.Mesh(
+      new THREE.SphereGeometry(1.625, 64, 64),
+      atmosphereGlowMaterial,
+    );
+    atmosphereGlow.renderOrder = 1;
+    globe.add(atmosphereGlow);
 
     const disposables: THREE.Texture[] = [tex];
     let disposed = false;
@@ -445,6 +457,8 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       window.removeEventListener('pointerup', onUp);
       renderer.dispose();
       nightMaterial?.dispose();
+      atmosphereGlow.geometry.dispose();
+      atmosphereGlowMaterial.dispose();
       disposables.forEach((d) => d.dispose());
       if (el.parentNode) el.parentNode.removeChild(el);
     };
@@ -452,6 +466,41 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
   }, [resolvedTheme]);
 
   return <div ref={mountRef} className={className} style={{ cursor: 'pointer' }} />;
+}
+
+function createAtmosphereGlowMaterial(isLight: boolean) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      glowColor: { value: new THREE.Color(isLight ? 0x77b9d6 : 0x82bfff) },
+      opacity: { value: isLight ? 0.12 : 0.15 },
+    },
+    vertexShader: `
+      varying vec3 vNormalView;
+      varying vec3 vViewDirection;
+      void main() {
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        vNormalView = normalize(normalMatrix * normal);
+        vViewDirection = normalize(-viewPosition.xyz);
+        gl_Position = projectionMatrix * viewPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 glowColor;
+      uniform float opacity;
+      varying vec3 vNormalView;
+      varying vec3 vViewDirection;
+      void main() {
+        float facing = max(dot(normalize(vNormalView), normalize(vViewDirection)), 0.0);
+        float rim = pow(1.0 - facing, 4.5);
+        float alpha = smoothstep(0.12, 0.92, rim) * opacity;
+        gl_FragColor = vec4(glowColor, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  });
 }
 
 function createNightLightsMaterial(nightMap: THREE.Texture, sunDirectionView: THREE.Vector3) {
