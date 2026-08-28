@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useTheme } from 'next-themes';
+import dayTextureUrl from '../../assets/earth/blue-marble-day.webp';
+import nightTextureUrl from '../../assets/earth/black-marble-night.webp';
+import topologyTextureUrl from '../../assets/earth/earth-topology.webp';
 
 /**
  * A genuine WebGL 3D globe: a lit, texture-mapped sphere that auto-rotates and can be
@@ -23,7 +26,7 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
     camera.position.set(0, 0.2, 6.5);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height);
     renderer.domElement.style.pointerEvents = 'none'; // Allow clicks to pass through
@@ -38,7 +41,7 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     // ---- Lights ----
     // Key light from the LEFT so shadow/terminator falls on the RIGHT
     // Dark mode: dramatic crescent. Light mode: softer but still visible shadow for depth.
-    const key = new THREE.DirectionalLight(0xffffff, isLight ? 2.5 : 3.6);
+    const key = new THREE.DirectionalLight(0xffffff, isLight ? 2.5 : 0.95);
     key.position.set(-4.5, 1.8, 2.8);
     scene.add(key);
     scene.add(new THREE.AmbientLight(0xffffff, isLight ? 0.5 : 0.05));
@@ -51,13 +54,14 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
 
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-    // ---- Planet texture: procedural fallback now, swap in a real hi-res map when loaded ----
+    // Render the procedural globe immediately; local compressed textures replace it asynchronously.
     const tex = makePlanetTexture();
     tex.anisotropy = maxAniso;
     const sphereMat = new THREE.MeshStandardMaterial({
       map: tex,
       bumpMap: tex,
       bumpScale: 0.02,
+      color: isLight ? 0xffffff : 0x74808e,
       roughness: isLight ? 0.85 : 1.0,
       metalness: 0.0,
     });
@@ -76,39 +80,57 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
 
     // ---- Globe ----
     const globe = new THREE.Group();
+    globe.rotation.set(-0.08, -1.35, 0);
     rig.add(globe);
     // Reduced segment count from 160 to 80 for better initial performance
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(1.6, 80, 80), sphereMat);
     globe.add(sphere);
 
     const disposables: THREE.Texture[] = [tex];
+    let disposed = false;
+    let nightMaterial: THREE.ShaderMaterial | undefined;
 
-    // Accurate NASA "blue marble" continents/oceans, desaturated to fit the monochrome
-    // look but with lifted midtones so oceans stay visibly gray (never pure black).
-    // Use higher resolution texture for better quality when zoomed
-    loadMonochromeTexture(
-      'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
-      maxAniso,
-      isLight,
-      (hi) => {
-        hi.minFilter = THREE.LinearMipmapLinearFilter;
-        hi.magFilter = THREE.LinearFilter;
-        sphereMat.map = hi;
-        sphereMat.needsUpdate = true;
-        disposables.push(hi);
-      },
-    );
-
-    // Real elevation data as a bump map → crisp coastlines & mountain relief (fixes "blurry").
+    // NASA Blue Marble + elevation + Black Marble are bundled as 2K WebP assets. This removes
+    // two cross-origin CDN waits and the previous 2M-pixel main-thread canvas conversion.
     const loader = new THREE.TextureLoader();
-    loader.setCrossOrigin('anonymous');
-    loader.load('https://unpkg.com/three-globe/example/img/earth-topology.png', (topo) => {
-      topo.anisotropy = maxAniso;
+    Promise.all([
+      loader.loadAsync(dayTextureUrl),
+      loader.loadAsync(topologyTextureUrl),
+      isLight ? Promise.resolve(null) : loader.loadAsync(nightTextureUrl),
+    ]).then(([day, topo, night]) => {
+      if (disposed) {
+        day.dispose();
+        topo.dispose();
+        night?.dispose();
+        return;
+      }
+
+      day.colorSpace = THREE.SRGBColorSpace;
+      day.anisotropy = maxAniso;
+      day.minFilter = THREE.LinearMipmapLinearFilter;
       topo.colorSpace = THREE.NoColorSpace;
+      topo.anisotropy = maxAniso;
+      sphereMat.map = day;
       sphereMat.bumpMap = topo;
-      sphereMat.bumpScale = 0.06;
+      sphereMat.bumpScale = 0.055;
       sphereMat.needsUpdate = true;
-      disposables.push(topo);
+      disposables.push(day, topo);
+
+      if (night) {
+        night.colorSpace = THREE.SRGBColorSpace;
+        night.anisotropy = maxAniso;
+        night.minFilter = THREE.LinearMipmapLinearFilter;
+        camera.updateMatrixWorld();
+        const sunDirectionView = key.position.clone().normalize().transformDirection(camera.matrixWorldInverse);
+        nightMaterial = createNightLightsMaterial(night, sunDirectionView);
+        const nightLights = new THREE.Mesh(sphere.geometry, nightMaterial);
+        nightLights.scale.setScalar(1.0015);
+        nightLights.renderOrder = 2;
+        globe.add(nightLights);
+        disposables.push(night);
+      }
+    }).catch(() => {
+      // The procedural sphere remains a complete, immediate fallback.
     });
 
     // Atmosphere halo (backside-rendered shell) - reduced segments from 64 to 32
@@ -345,7 +367,20 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     // ---- Animate ----
     let last = performance.now();
     let raf = 0;
+    let inViewport = true;
+    const satWorldPos = new THREE.Vector3();
+    const earthWorldPos = new THREE.Vector3();
+    const lookAtMatrix = new THREE.Matrix4();
+    const parentWorldQuaternion = new THREE.Quaternion();
+    const targetQuaternion = new THREE.Quaternion();
+    const localQuaternion = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+
     const tick = () => {
+      if (!inViewport || document.hidden) {
+        raf = 0;
+        return;
+      }
       raf = requestAnimationFrame(tick);
       const now = performance.now();
       const dt = Math.min((now - last) / 1000, 0.1); // clamp to avoid jumps after tab-away
@@ -357,35 +392,15 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       }
       globe.rotation.y += velY;
       globe.rotation.x = THREE.MathUtils.clamp(globe.rotation.x + velX, -0.6, 0.6);
-      grid.rotation.copy(globe.rotation);
 
       sats.forEach((s) => {
         s.pivot.rotation.y += s.speed * dt;
-
-        // Make satellite always face the Earth center (origin)
-        // Get satellite's world position
-        const satWorldPos = new THREE.Vector3();
         s.mesh.getWorldPosition(satWorldPos);
-
-        // Look at Earth center (which is at rig's position in world space)
-        const earthWorldPos = new THREE.Vector3();
         rig.getWorldPosition(earthWorldPos);
-
-        // Create a lookAt matrix pointing from satellite to Earth
-        const lookAtMatrix = new THREE.Matrix4();
-        lookAtMatrix.lookAt(satWorldPos, earthWorldPos, new THREE.Vector3(0, 1, 0));
-
-        // Convert to local space rotation
-        const parentWorldQuaternion = new THREE.Quaternion();
+        lookAtMatrix.lookAt(satWorldPos, earthWorldPos, up);
         s.pivot.getWorldQuaternion(parentWorldQuaternion);
-
-        const targetQuaternion = new THREE.Quaternion();
         targetQuaternion.setFromRotationMatrix(lookAtMatrix);
-
-        // Apply inverse of parent rotation to get local rotation
-        const localQuaternion = new THREE.Quaternion();
         localQuaternion.copy(parentWorldQuaternion).invert().multiply(targetQuaternion);
-
         s.mesh.quaternion.copy(localQuaternion);
       });
       stars.rotation.y += dt * 0.01;
@@ -393,6 +408,32 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       renderer.render(scene, camera);
     };
     tick();
+
+    const resume = () => {
+      if (inViewport && !document.hidden && raf === 0) {
+        last = performance.now();
+        raf = requestAnimationFrame(tick);
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden && raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      } else {
+        resume();
+      }
+    };
+    const viewportObserver = new IntersectionObserver(([entry]) => {
+      inViewport = entry?.isIntersecting ?? true;
+      if (!inViewport && raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      } else {
+        resume();
+      }
+    }, { rootMargin: '200px' });
+    viewportObserver.observe(mount);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // ---- Resize ----
     const ro = new ResizeObserver(() => {
@@ -406,12 +447,16 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     ro.observe(mount);
 
     return () => {
+      disposed = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
+      viewportObserver.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       el.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       renderer.dispose();
+      nightMaterial?.dispose();
       disposables.forEach((d) => d.dispose());
       if (el.parentNode) el.parentNode.removeChild(el);
     };
@@ -421,49 +466,47 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
   return <div ref={mountRef} className={className} style={{ cursor: 'pointer' }} />;
 }
 
-/** Load an equirectangular image (CORS), desaturate + tone-map, return a crisp CanvasTexture. */
-function loadMonochromeTexture(
-  url: string,
-  aniso: number,
-  isLight: boolean,
-  onReady: (t: THREE.CanvasTexture) => void,
-) {
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    // Reduce initial texture resolution from 4096x2048 to 2048x1024 for faster loading
-    const w = Math.min(img.naturalWidth || 2048, 2048);
-    const h = Math.min(img.naturalHeight || 1024, 1024);
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    const ctx = c.getContext('2d', { willReadFrequently: true })!;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, 0, 0, w, h);
-    const data = ctx.getImageData(0, 0, w, h);
-    const p = data.data;
-    // Light mode: brighter floor + stronger land/ocean contrast so the globe is legible
-    // on white. Dark mode: keep it moody but still lift oceans off pure black.
-    const floor = isLight ? 110 : 30;
-    const gain = isLight ? 1.3 : 1.35;
-    for (let i = 0; i < p.length; i += 4) {
-      let l = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2];
-      l = Math.min(255, Math.max(0, (l - 12) * gain + floor));
-      p[i] = p[i + 1] = p[i + 2] = l;
-    }
-    ctx.putImageData(data, 0, 0);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = aniso;
-    tex.generateMipmaps = true;
-    tex.minFilter = THREE.LinearMipmapLinearFilter;
-    onReady(tex);
-  };
-  img.onerror = () => {
-    /* keep the procedural fallback */
-  };
-  img.src = url;
+function createNightLightsMaterial(nightMap: THREE.Texture, sunDirectionView: THREE.Vector3) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      nightMap: { value: nightMap },
+      sunDirectionView: { value: sunDirectionView },
+      intensity: { value: 0.92 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vNormalView;
+      void main() {
+        vUv = uv;
+        vNormalView = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D nightMap;
+      uniform vec3 sunDirectionView;
+      uniform float intensity;
+      varying vec2 vUv;
+      varying vec3 vNormalView;
+      void main() {
+        vec3 source = texture2D(nightMap, vUv).rgb;
+        vec3 emitted = max(source - vec3(0.105, 0.085, 0.065), vec3(0.0));
+        float luminance = max(emitted.r, max(emitted.g, emitted.b));
+        float nightSide = 1.0 - smoothstep(-0.24, 0.16, dot(normalize(vNormalView), normalize(sunDirectionView)));
+        float glow = smoothstep(0.012, 0.23, luminance);
+        float core = smoothstep(0.075, 0.48, luminance);
+        float nightVisibility = mix(0.58, 1.0, nightSide);
+        float strength = clamp(glow * 0.38 + core * 0.72, 0.0, 1.0);
+        vec3 amber = mix(vec3(1.0, 0.18, 0.008), vec3(1.0, 0.72, 0.16), core);
+        vec3 warmLights = amber * mix(0.58, 1.0, core) * intensity;
+        gl_FragColor = vec4(warmLights, nightVisibility * strength * 0.96);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+    toneMapped: false,
+  });
 }
 
 /** Draw a wide grayscale planetary texture on a canvas (continents-ish blobs + speckle). */

@@ -1,9 +1,8 @@
-import { useState, useRef } from 'react';
+import { lazy, Suspense, useState, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { motion } from 'motion/react';
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import {
-  Search,
   History,
   Sparkles,
   Crosshair,
@@ -24,8 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
-import { ImageWithFallback } from '../components/figma/ImageWithFallback';
-import { HeroGlobe } from '../components/HeroGlobe';
+import heroGalaxyUrl from '../../assets/earth/hero-galaxy.webp';
 import { SectionHeader } from '../components/SectionHeader';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -33,7 +31,6 @@ import { Card } from '../components/ui/card';
 import { SATELLITES } from '../data/satellites';
 import { SOLUTIONS } from '../data/solutions';
 import { REGIONS } from '../data/products';
-import { MapPin } from 'lucide-react';
 
 const SOLUTION_ICONS: Record<string, LucideIcon> = {
   Trees,
@@ -44,8 +41,7 @@ const SOLUTION_ICONS: Record<string, LucideIcon> = {
   Waves,
 };
 
-const GALAXY_IMG =
-  'https://images.unsplash.com/photo-1760490196378-85127689ab0e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1600';
+const HeroGlobe = lazy(() => import('../components/HeroGlobe').then((module) => ({ default: module.HeroGlobe })));
 
 export function Home() {
   const { t, lang } = useI18n();
@@ -143,9 +139,10 @@ export function Home() {
       {/* Hero — cosmic */}
       <section className="relative flex min-h-[600px] w-full items-center justify-center overflow-hidden border-b border-border sm:min-h-[700px] lg:min-h-[820px]">
         {/* Galaxy wash */}
-        <ImageWithFallback
-          src={GALAXY_IMG}
+        <img
+          src={heroGalaxyUrl}
           alt="Deep space galaxy"
+          decoding="async"
           className="pointer-events-none absolute inset-0 size-full object-cover opacity-[0.18] grayscale"
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
@@ -160,13 +157,14 @@ export function Home() {
             willChange: 'transform',
           }}
         >
-          <HeroGlobe
-            className="absolute inset-0"
-            onRigChange={(rig) => {
-              rigRef.current = rig;
-              console.log('Rig ref set:', rig);
-            }}
-          />
+          <Suspense fallback={<div className="absolute right-[10%] top-1/2 size-[min(42vw,34rem)] -translate-y-1/2 rounded-full border border-primary/10 bg-primary/[0.025] shadow-[0_0_100px_rgba(255,255,255,0.04)]" />}>
+            <HeroGlobe
+              className="absolute inset-0"
+              onRigChange={(rig) => {
+                rigRef.current = rig;
+              }}
+            />
+          </Suspense>
           {/* Clickable overlay on top of globe but below text */}
           <div
             className="absolute inset-0 cursor-pointer"
