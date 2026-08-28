@@ -133,18 +133,6 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       // The procedural sphere remains a complete, immediate fallback.
     });
 
-    // Atmosphere halo (backside-rendered shell) - reduced segments from 64 to 32
-    const atmo = new THREE.Mesh(
-      new THREE.SphereGeometry(1.72, 32, 32),
-      new THREE.MeshBasicMaterial({
-        color: isLight ? 0x88ccff : 0xffffff,
-        transparent: true,
-        opacity: isLight ? 0.08 : 0.07,
-        side: THREE.BackSide,
-      }),
-    );
-    globe.add(atmo);
-
     // Thin latitude/longitude wireframe for a techy feel - reduced segments from 24,16 to 16,12
     const grid = new THREE.LineSegments(
       new THREE.WireframeGeometry(new THREE.SphereGeometry(1.605, 16, 12)),
