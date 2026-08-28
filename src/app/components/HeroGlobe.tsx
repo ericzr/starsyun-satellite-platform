@@ -47,7 +47,7 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     scene.add(new THREE.AmbientLight(0xffffff, isLight ? 1.15 : 0.05));
     if (isLight) {
       // Keep the daylight hemisphere readable against the white page.
-      const fill = new THREE.DirectionalLight(0xd8efff, 0.75);
+      const fill = new THREE.DirectionalLight(0xffffff, 0.58);
       fill.position.set(3, 0, 2);
       scene.add(fill);
     }
@@ -61,9 +61,10 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       map: tex,
       bumpMap: tex,
       bumpScale: 0.02,
-      color: isLight ? 0xf5fbff : 0x74808e,
-      emissive: isLight ? 0x284f65 : 0x000000,
-      emissiveIntensity: isLight ? 0.42 : 0,
+      // Neutral graphite/silver treatment keeps daylight in the site's monochrome hacker palette.
+      color: isLight ? 0xf1f1f1 : 0x74808e,
+      emissive: isLight ? 0x161616 : 0x000000,
+      emissiveIntensity: isLight ? 0.1 : 0,
       roughness: isLight ? 0.8 : 1.0,
       metalness: 0.0,
     });
@@ -471,8 +472,8 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
 function createAtmosphereGlowMaterial(isLight: boolean) {
   return new THREE.ShaderMaterial({
     uniforms: {
-      glowColor: { value: new THREE.Color(isLight ? 0x77b9d6 : 0x82bfff) },
-      opacity: { value: isLight ? 0.12 : 0.15 },
+      glowColor: { value: new THREE.Color(isLight ? 0xd7d7d7 : 0x82bfff) },
+      opacity: { value: isLight ? 0.1 : 0.15 },
     },
     vertexShader: `
       varying vec3 vNormalView;
