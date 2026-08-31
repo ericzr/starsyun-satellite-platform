@@ -518,7 +518,6 @@ export function Explore() {
               {t.explore.resultsCount(results.length)}
             </div>
             {remoteLoading && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在查询公开卫星数据…' : 'Querying open satellite data…'}</div>}
-            {!remoteLoading && isRemote && <div className="mt-1 text-[10px] text-emerald-500">Earth Search / Sentinel-2</div>}
             {remoteError && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? '公开数据源暂不可用，已回退示例数据' : 'Open source unavailable; showing demo data'}</div>}
           </div>
           {!aoi && (
@@ -561,7 +560,6 @@ export function Explore() {
                   {t.explore.resultsCount(results.length)}
                 </div>
                 {remoteLoading && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在查询公开卫星数据…' : 'Querying open satellite data…'}</div>}
-                {!remoteLoading && isRemote && <div className="mt-1 text-[10px] text-emerald-500">Earth Search / Sentinel-2</div>}
                 {remoteError && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? '公开数据源暂不可用，已回退示例数据' : 'Open source unavailable; showing demo data'}</div>}
               </div>
               {!aoi && (
