@@ -3,21 +3,33 @@
 
 export type BBox = [number, number, number, number];
 
-const EARTH_R = 6371; // km
+const EARTH_A = 6378.137; // WGS84 semi-major axis, km
+const EARTH_E2 = 0.0066943799901413165; // WGS84 eccentricity squared
 
 function deg2rad(d: number) {
   return (d * Math.PI) / 180;
 }
 
-/** Approximate area of a lon/lat bbox in km² (spherical). */
+/**
+ * Surface area of a lon/lat bbox on the WGS84 ellipsoid in km².
+ * The longitude strip is integrated analytically, so the result is stable
+ * across map zoom levels and remains accurate for large/high-latitude AOIs.
+ */
 export function bboxAreaKm2(b: BBox): number {
   const [w, s, e, n] = b;
-  const latMid = deg2rad((s + n) / 2);
-  const dLat = deg2rad(n - s);
-  const dLon = deg2rad(e - w);
-  const height = EARTH_R * dLat;
-  const width = EARTH_R * dLon * Math.cos(latMid);
-  return Math.abs(width * height);
+  const south = deg2rad(Math.max(-90, Math.min(90, s)));
+  const north = deg2rad(Math.max(-90, Math.min(90, n)));
+  const longitudeSpan = Math.abs(e - w) > 360 ? 360 : Math.abs(e - w);
+  const dLon = deg2rad(longitudeSpan);
+  const eccentricity = Math.sqrt(EARTH_E2);
+  const stripArea = (latitude: number) => {
+    const sinLat = Math.sin(latitude);
+    const denominator = 1 - EARTH_E2 * sinLat * sinLat;
+    return (EARTH_A * EARTH_A * (1 - EARTH_E2) / 2) * (
+      sinLat / denominator + Math.atanh(eccentricity * sinLat) / eccentricity
+    );
+  };
+  return Math.abs(dLon * (stripArea(north) - stripArea(south)));
 }
 
 /** Intersection bbox of two boxes, or null if disjoint. */

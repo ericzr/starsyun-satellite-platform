@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type * as ML from 'maplibre-gl';
 import { useTheme } from 'next-themes';
+import { useI18n, type Lang } from '../i18n';
 import type { BBox } from '../lib/geo';
 import { bboxToPolygon } from '../lib/geo';
 
@@ -95,6 +96,7 @@ export function MapCanvas({
   const mapRef = useRef<MlMap | null>(null);
   const readyRef = useRef(false);
   const { resolvedTheme } = useTheme();
+  const { lang } = useI18n();
   const theme = resolvedTheme === 'light' ? 'light' : 'dark';
 
   // keep latest props for event handlers
@@ -104,6 +106,8 @@ export function MapCanvas({
   const accent = theme === 'light' ? ACCENT_LIGHT : ACCENT_DARK;
   const accentRef = useRef(accent);
   accentRef.current = accent;
+  const languageRef = useRef(lang);
+  languageRef.current = lang;
 
   // Initialize map once.
   useEffect(() => {
@@ -133,11 +137,13 @@ export function MapCanvas({
       map.on('load', () => {
         readyRef.current = true;
         ensureLayers(map!, accentRef.current);
+        applyMapLanguage(map!, languageRef.current);
         pushData(map!);
       });
       map.on('styledata', () => {
         if (readyRef.current) {
           ensureLayers(map!, accentRef.current);
+          applyMapLanguage(map!, languageRef.current);
           pushData(map!);
         }
       });
@@ -173,6 +179,13 @@ export function MapCanvas({
     map.setStyle(STYLES[theme]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme]);
+
+  // Keep basemap labels in sync with the application's selected language.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    applyMapLanguage(map, lang);
+  }, [lang]);
 
   // Push overlay data when inputs change.
   const dataRef = useRef({ aoi, footprints, highlightId });
@@ -291,6 +304,35 @@ export function MapCanvas({
   }
 
   return <div ref={containerRef} className={className} />;
+}
+
+const MAP_LANGUAGE_FIELDS: Record<Lang, string> = {
+  zh: 'name:zh',
+  en: 'name:en',
+  ar: 'name:ar',
+  es: 'name:es',
+  fr: 'name:fr',
+  pt: 'name:pt',
+  ru: 'name:ru',
+  ja: 'name:ja',
+  ko: 'name:ko',
+  de: 'name:de',
+};
+
+function applyMapLanguage(map: MlMap, lang: Lang) {
+  const preferredField = MAP_LANGUAGE_FIELDS[lang] ?? 'name:en';
+  const style = map.getStyle();
+  for (const layer of style.layers ?? []) {
+    if (layer.type !== 'symbol' || !layer.layout?.['text-field']) continue;
+    const textField = JSON.stringify(layer.layout['text-field']);
+    if (!textField.includes('name')) continue;
+    map.setLayoutProperty(layer.id, 'text-field', [
+      'coalesce',
+      ['get', preferredField],
+      ['get', 'name_en'],
+      ['get', 'name'],
+    ]);
+  }
 }
 
 function ensureLayers(map: MlMap, accent: string) {
