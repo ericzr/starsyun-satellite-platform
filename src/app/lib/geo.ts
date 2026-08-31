@@ -55,19 +55,13 @@ export function bboxAreaKm2(b: BBox): number {
   const [w, s, e, n] = b;
   const south = deg2rad(Math.max(-90, Math.min(90, s)));
   const north = deg2rad(Math.max(-90, Math.min(90, n)));
-  // MapLibre can return longitudes outside [-180, 180] when the world wraps.
-  // Normalize the endpoints first and use the smaller arc for dateline-crossing boxes.
-  const normalizeLng = (lng: number) => ((lng + 180) % 360 + 360) % 360 - 180;
-  const west = normalizeLng(w);
-  const east = normalizeLng(e);
-  const normalizedSpan = Math.abs(east - west);
+  // MapLibre can return longitudes outside [-180, 180] when the world wraps;
+  // drawing keeps those unwrapped values so the measured span remains stable.
   const originalSpan = Math.abs(e - w);
-  // Keep explicitly unwrapped bboxes (e.g. 179..181) intact. For ordinary
-  // [-180, 180] endpoints, choose the shorter arc when the box crosses the
-  // antimeridian (e.g. 179..-179).
-  const longitudeSpan = originalSpan <= 180
-    ? originalSpan
-    : Math.min(normalizedSpan, 360 - normalizedSpan);
+  // Drawing normalizes antimeridian-crossing boxes into an unwrapped range
+  // (e.g. 179..181), so preserve the explicit span rather than guessing a
+  // complement for broad, intentional rectangles.
+  const longitudeSpan = Math.min(originalSpan, 360);
   const dLon = deg2rad(longitudeSpan);
   const eccentricity = Math.sqrt(EARTH_E2);
   const stripArea = (latitude: number) => {
