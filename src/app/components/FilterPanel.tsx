@@ -1,5 +1,6 @@
-import { RotateCcw } from 'lucide-react';
+import { CalendarDays, RotateCcw } from 'lucide-react';
 import { useI18n } from '../i18n';
+import { useRef } from 'react';
 import type { DataType, ProductCategory, ProcessingLevel } from '../data/products';
 import { DATA_TYPE_LABEL, pick } from '../lib/labels';
 import { Button } from './ui/button';
@@ -68,6 +69,42 @@ function Chip({
     >
       {children}
     </button>
+  );
+}
+
+function DateField({
+  value,
+  placeholder,
+  ariaLabel,
+  onChange,
+}: {
+  value?: string;
+  placeholder: string;
+  ariaLabel: string;
+  onChange: (value: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const openPicker = () => inputRef.current?.showPicker?.();
+  return (
+    <div className="relative h-9 w-full">
+      <button
+        type="button"
+        className="pointer-events-none absolute inset-0 flex h-9 w-full items-center justify-between rounded-md border border-border bg-background px-3 py-1 text-left text-xs shadow-sm"
+        tabIndex={-1}
+      >
+        <span className={value ? 'text-foreground' : 'text-muted-foreground'}>{value || placeholder}</span>
+        <CalendarDays className="size-3.5 text-muted-foreground" />
+      </button>
+      <input
+        ref={inputRef}
+        type="date"
+        value={value || ''}
+        aria-label={ariaLabel}
+        onChange={(event) => onChange(event.target.value)}
+        onClick={openPicker}
+        className="absolute inset-0 z-10 h-9 w-full cursor-pointer opacity-0"
+      />
+    </div>
   );
 }
 
@@ -212,21 +249,11 @@ export function FilterPanel({
           <div className="space-y-2">
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground">{lang === 'zh' ? '开始日期' : 'Start Date'}</Label>
-              <input
-                type="date"
-                value={filters.dateStart || ''}
-                onChange={(e) => onChange({ ...filters, dateStart: e.target.value })}
-                className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
+              <DateField value={filters.dateStart} placeholder={lang === 'zh' ? '年 / 月 / 日' : 'YYYY / MM / DD'} ariaLabel={lang === 'zh' ? '开始日期' : 'Start date'} onChange={(value) => onChange({ ...filters, dateStart: value })} />
             </div>
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground">{lang === 'zh' ? '结束日期' : 'End Date'}</Label>
-              <input
-                type="date"
-                value={filters.dateEnd || ''}
-                onChange={(e) => onChange({ ...filters, dateEnd: e.target.value })}
-                className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
+              <DateField value={filters.dateEnd} placeholder={lang === 'zh' ? '年 / 月 / 日' : 'YYYY / MM / DD'} ariaLabel={lang === 'zh' ? '结束日期' : 'End date'} onChange={(value) => onChange({ ...filters, dateEnd: value })} />
             </div>
           </div>
         )}
@@ -234,12 +261,7 @@ export function FilterPanel({
         {/* Single Date Mode */}
         {filters.timeMode === 'single' && (
           <div className="space-y-1">
-            <input
-              type="date"
-              value={filters.dateStart || ''}
-              onChange={(e) => onChange({ ...filters, dateStart: e.target.value, dateEnd: e.target.value })}
-              className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
+            <DateField value={filters.dateStart} placeholder={lang === 'zh' ? '年 / 月 / 日' : 'YYYY / MM / DD'} ariaLabel={lang === 'zh' ? '指定日期' : 'Selected date'} onChange={(value) => onChange({ ...filters, dateStart: value, dateEnd: value })} />
           </div>
         )}
       </div>
@@ -260,7 +282,7 @@ export function FilterPanel({
             active={filters.resMode === 'range'}
             onClick={() => onChange({ ...filters, resMode: 'range' })}
           >
-            {lang === 'zh' ? '精确范围' : 'Custom'}
+              {lang === 'zh' ? '输入精度' : 'Custom resolution'}
           </Chip>
         </div>
 
@@ -283,27 +305,12 @@ export function FilterPanel({
           </Select>
         )}
 
-        {/* Custom Range Mode */}
+        {/* Custom resolution input */}
         {filters.resMode === 'range' && (
           <div className="space-y-2">
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground">
-                {lang === 'zh' ? '最小分辨率 (m)' : 'Min Resolution (m)'}
-              </Label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                placeholder={lang === 'zh' ? '例如: 0.3' : 'e.g. 0.3'}
-                value={filters.resMin ?? ''}
-                onChange={(e) => onChange({ ...filters, resMin: e.target.value ? parseFloat(e.target.value) : undefined })}
-                className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">
-                {lang === 'zh' ? '最大分辨率 (m)' : 'Max Resolution (m)'}
+                {lang === 'zh' ? '最高分辨率 (m)' : 'Maximum resolution (m)'}
               </Label>
               <input
                 type="number"
@@ -317,7 +324,7 @@ export function FilterPanel({
               />
             </div>
             <p className="text-[10px] text-muted-foreground">
-              {lang === 'zh' ? '输入精确的分辨率范围' : 'Enter exact resolution range'}
+              {lang === 'zh' ? '输入一个上限，筛选不超过该精度的数据' : 'Enter a maximum resolution to filter products'}
             </p>
           </div>
         )}
