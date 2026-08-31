@@ -3,6 +3,42 @@
 
 export type BBox = [number, number, number, number];
 
+/** Extract the WGS84 extent from a KML/KMZ vector file in the browser. */
+export async function parseVectorFile(file: File): Promise<BBox> {
+  const lowerName = file.name.toLowerCase();
+  let kmlText: string;
+  if (lowerName.endsWith('.kmz')) {
+    const { default: JSZip } = await import('jszip');
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const kmlEntry = Object.keys(zip.files).find((name) => name.toLowerCase().endsWith('.kml'));
+    if (!kmlEntry) throw new Error('KMZ file does not contain a KML document');
+    kmlText = await zip.file(kmlEntry)!.async('text');
+  } else if (lowerName.endsWith('.kml')) {
+    kmlText = await file.text();
+  } else {
+    throw new Error('Only KML and KMZ files are supported');
+  }
+
+  const document = new DOMParser().parseFromString(kmlText, 'application/xml');
+  if (document.querySelector('parsererror')) throw new Error('Invalid KML document');
+  const points: [number, number][] = [];
+  document.querySelectorAll('coordinates').forEach((node) => {
+    node.textContent
+      ?.trim()
+      .split(/\s+/)
+      .forEach((tuple) => {
+        const [lng, lat] = tuple.split(',').map(Number);
+        if (Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lng) <= 180 && Math.abs(lat) <= 90) {
+          points.push([lng, lat]);
+        }
+      });
+  });
+  if (!points.length) throw new Error('No valid coordinates found in vector file');
+  const lngs = points.map(([lng]) => lng);
+  const lats = points.map(([, lat]) => lat);
+  return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
+}
+
 const EARTH_A = 6378.137; // WGS84 semi-major axis, km
 const EARTH_E2 = 0.0066943799901413165; // WGS84 eccentricity squared
 

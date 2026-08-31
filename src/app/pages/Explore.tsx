@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List } from 'lucide-react';
+import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List, Upload, MapPinned, LocateFixed, PencilLine } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useI18n } from '../i18n';
 import { PRODUCTS, REGIONS, type Product } from '../data/products';
-import { coverageRatio, intersects, bboxAreaKm2, fmtArea, parseCoords, type BBox } from '../lib/geo';
+import { coverageRatio, intersects, bboxAreaKm2, fmtArea, parseCoords, parseVectorFile, type BBox } from '../lib/geo';
 import { MapCanvas, type Footprint } from '../components/MapCanvas';
 import { FilterPanel, DEFAULT_FILTERS, type Filters } from '../components/FilterPanel';
 import { ResultCard } from '../components/ResultCard';
@@ -59,6 +59,11 @@ export function Explore() {
   const [params] = useSearchParams();
 
   const [search, setSearch] = useState('');
+  const [selectionMode, setSelectionMode] = useState<'coordinate' | 'admin' | 'vector' | 'draw'>('coordinate');
+  const [coordinateInput, setCoordinateInput] = useState('');
+  const [adminSelection, setAdminSelection] = useState('');
+  const [vectorName, setVectorName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [regionId, setRegionId] = useState<string | null>(null);
   const [aoi, setAoi] = useState<BBox | null>(null);
   const [drawing, setDrawing] = useState(false);
@@ -86,6 +91,8 @@ export function Explore() {
   }, []);
 
   function runSearch(q: string) {
+    setAoi(null);
+    setVectorName('');
     const coords = parseCoords(q);
     if (coords) {
       focusKey.current += 1;
@@ -103,6 +110,103 @@ export function Explore() {
     } else {
       toast.error(lang === 'zh' ? '未找到该地点，试试迪拜 / 上海 / 深圳' : 'Place not found. Try Dubai / Shanghai.');
     }
+  }
+
+  function selectRegion(region: (typeof REGIONS)[number]) {
+    focusKey.current += 1;
+    setSearch(lang === 'zh' ? region.name : region.nameEn);
+    setAdminSelection(region.id);
+    setRegionId(region.id);
+    setAoi(null);
+    setFocus({ center: region.center, zoom: region.zoom, key: focusKey.current });
+    setRemoteBbox(regionSearchBbox(region));
+  }
+
+  function submitCoordinates() {
+    const coords = parseCoords(coordinateInput);
+    if (!coords) {
+      toast.error(lang === 'zh' ? '请输入“纬度, 经度”，例如 31.2304, 121.4737' : 'Enter “latitude, longitude”, e.g. 31.2304, 121.4737');
+      return;
+    }
+    setSearch(coordinateInput);
+    runSearch(coordinateInput);
+  }
+
+  async function handleVectorFile(file?: File) {
+    if (!file) return;
+    try {
+      const bbox = await parseVectorFile(file);
+      if (bbox[2] - bbox[0] < 0.0001 || bbox[3] - bbox[1] < 0.0001) throw new Error('Vector extent is too small');
+      focusKey.current += 1;
+      setVectorName(file.name);
+      setAoi(bbox);
+      setRegionId(null);
+      setRemoteBbox(bbox);
+      setFocus({ center: [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], zoom: 10, key: focusKey.current });
+      toast.success(lang === 'zh' ? `已加载 ${file.name}` : `${file.name} loaded`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : lang === 'zh' ? '矢量文件解析失败' : 'Could not read vector file');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  function chooseMode(mode: 'coordinate' | 'admin' | 'vector' | 'draw') {
+    setSelectionMode(mode);
+    if (mode === 'draw') setDrawing(true);
+  }
+
+  function renderAreaSelector() {
+    return (
+      <div className="mt-3 space-y-3 border-t border-border pt-3">
+        <div className="grid grid-cols-4 gap-1 rounded-md border border-border bg-input-background p-1">
+          {([
+            ['coordinate', LocateFixed, t.explore.coordinate],
+            ['admin', MapPinned, t.explore.adminRegion],
+            ['vector', Upload, t.explore.uploadVector],
+            ['draw', PencilLine, t.explore.drawArea],
+          ] as const).map(([mode, Icon, label]) => (
+            <button
+              key={mode}
+              type="button"
+              className={`flex min-w-0 flex-col items-center gap-1 rounded px-1 py-2 text-[10px] transition-colors ${selectionMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              onClick={() => chooseMode(mode)}
+              title={label}
+            >
+              <Icon className="size-3.5" />
+              <span className="truncate">{label}</span>
+            </button>
+          ))}
+        </div>
+        {selectionMode === 'coordinate' && (
+          <div className="flex gap-2">
+            <Input value={coordinateInput} onChange={(event) => setCoordinateInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && submitCoordinates()} placeholder={t.explore.coordinatePlaceholder} className="h-8 text-xs" />
+            <Button type="button" size="sm" className="h-8 shrink-0 px-3" onClick={submitCoordinates}>{t.common.search}</Button>
+          </div>
+        )}
+        {selectionMode === 'admin' && (
+          <select
+            value={adminSelection}
+            onChange={(event) => {
+              const region = REGIONS.find((item) => item.id === event.target.value);
+              if (region) selectRegion(region);
+            }}
+            className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="">{t.explore.adminPlaceholder}</option>
+            {REGIONS.map((region) => <option key={region.id} value={region.id}>{lang === 'zh' ? region.name : region.nameEn}</option>)}
+          </select>
+        )}
+        {selectionMode === 'vector' && (
+          <div>
+            <input ref={fileInputRef} type="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" className="hidden" onChange={(event) => handleVectorFile(event.target.files?.[0])} />
+            <Button type="button" variant="outline" size="sm" className="h-8 w-full text-xs" onClick={() => fileInputRef.current?.click()}><Upload className="size-3.5" />{vectorName || t.explore.uploadVectorHint}</Button>
+            <p className="mt-1 text-[10px] text-muted-foreground">{t.explore.uploadVectorDesc}</p>
+          </div>
+        )}
+        {selectionMode === 'draw' && <p className="text-[10px] text-muted-foreground">{t.explore.drawHint}</p>}
+      </div>
+    );
   }
 
   // Query public Sentinel-2 STAC data for an explicit region/AOI.
@@ -249,6 +353,7 @@ export function Explore() {
               className="border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
             />
           </div>
+          {renderAreaSelector()}
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           <FilterPanel filters={filters} onChange={setFilters} />
@@ -275,6 +380,7 @@ export function Explore() {
                 className="border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
               />
             </div>
+            {renderAreaSelector()}
           </div>
           <div className="overflow-y-auto p-4">
             <FilterPanel filters={filters} onChange={setFilters} />
@@ -325,7 +431,10 @@ export function Explore() {
               variant={drawing ? 'default' : 'outline'}
               size="sm"
               className="bg-card/90 backdrop-blur"
-              onClick={() => setDrawing((d) => !d)}
+              onClick={() => {
+                setSelectionMode('draw');
+                setDrawing((d) => !d);
+              }}
             >
               <Square className="size-3.5" />
               <span className="hidden sm:inline">{drawing ? t.explore.drawing : t.explore.drawRect}</span>
@@ -337,6 +446,8 @@ export function Explore() {
                 className="bg-card/90 backdrop-blur"
                 onClick={() => {
                   setAoi(null);
+                  setVectorName('');
+                  setAdminSelection('');
                   if (regionId) {
                     const region = REGIONS.find((item) => item.id === regionId);
                     setRemoteBbox(region ? regionSearchBbox(region) : null);
