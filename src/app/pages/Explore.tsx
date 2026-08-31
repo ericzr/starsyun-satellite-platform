@@ -362,7 +362,7 @@ export function Explore() {
 
       {/* Mobile Filter Sheet */}
       <Sheet open={filterOpen} onOpenChange={setFilterOpen}>
-        <SheetContent side="left" className="w-80 p-0">
+        <SheetContent side="left" className="w-80 p-0 pt-14">
           <SheetTitle className="sr-only">{t.explore.filters || '筛选'}</SheetTitle>
           <div className="border-b border-border p-4">
             <div className="flex items-center gap-2 rounded-md border border-border bg-input-background px-2">
@@ -551,7 +551,7 @@ export function Explore() {
 
       {/* Mobile Results Sheet */}
       <Sheet open={resultOpen} onOpenChange={setResultOpen}>
-        <SheetContent side="right" className="w-full p-0 sm:max-w-md">
+        <SheetContent side="right" className="w-full p-0 pt-14 sm:max-w-md">
           <SheetTitle className="sr-only">{t.explore.results}</SheetTitle>
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
