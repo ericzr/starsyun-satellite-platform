@@ -102,6 +102,8 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     const disposables: THREE.Texture[] = [tex];
     let disposed = false;
     let nightMaterial: THREE.ShaderMaterial | undefined;
+    let cloudMaterial: THREE.ShaderMaterial | undefined;
+    let cloudGeometry: THREE.SphereGeometry | undefined;
 
     // NASA Blue Marble + elevation + Black Marble are bundled as 2K WebP assets. This removes
     // two cross-origin CDN waits and the previous 2M-pixel main-thread canvas conversion.
@@ -144,6 +146,29 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       }
     }).catch(() => {
       // The procedural sphere remains a complete, immediate fallback.
+    });
+
+    // NASA GIBS MODIS cloud fraction: global daily composite, public and CORS-enabled.
+    // This is intentionally a separate request so cloud loading never delays the globe.
+    // MODIS cloud-fraction composites can lag UTC by several hours. Yesterday's
+    // date is the most reliable latest-available global composite.
+    const cloudDate = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const cloudUrl = `https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=MODIS_Terra_Cloud_Fraction_Day&STYLES=&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=1024&HEIGHT=512&FORMAT=image/png&TRANSPARENT=TRUE&TIME=${cloudDate}`;
+    loader.loadAsync(cloudUrl).then((cloudTexture) => {
+      if (disposed) {
+        cloudTexture.dispose();
+        return;
+      }
+      cloudTexture.colorSpace = THREE.NoColorSpace;
+      cloudTexture.minFilter = THREE.LinearFilter;
+      cloudMaterial = createCloudMaterial(cloudTexture, isLight);
+      cloudGeometry = new THREE.SphereGeometry(1.612, 64, 64);
+      const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+      clouds.renderOrder = 3;
+      globe.add(clouds);
+      disposables.push(cloudTexture);
+    }).catch(() => {
+      // Cloud data is an enhancement; the local earth texture remains the fallback.
     });
 
     // Thin latitude/longitude wireframe for a techy feel - reduced segments from 24,16 to 16,12
@@ -458,6 +483,8 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       window.removeEventListener('pointerup', onUp);
       renderer.dispose();
       nightMaterial?.dispose();
+      cloudMaterial?.dispose();
+      cloudGeometry?.dispose();
       atmosphereGlow.geometry.dispose();
       atmosphereGlowMaterial.dispose();
       disposables.forEach((d) => d.dispose());
@@ -538,6 +565,41 @@ function createNightLightsMaterial(nightMap: THREE.Texture, sunDirectionView: TH
         vec3 amber = mix(vec3(1.0, 0.18, 0.008), vec3(1.0, 0.72, 0.16), core);
         vec3 warmLights = amber * mix(0.58, 1.0, core) * intensity;
         gl_FragColor = vec4(warmLights, nightVisibility * strength * 0.96);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+    toneMapped: false,
+  });
+}
+
+function createCloudMaterial(cloudMap: THREE.Texture, isLight: boolean) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      cloudMap: { value: cloudMap },
+      cloudColor: { value: new THREE.Color(isLight ? 0x505050 : 0xd7d7d7) },
+      opacity: { value: isLight ? 0.12 : 0.1 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D cloudMap;
+      uniform vec3 cloudColor;
+      uniform float opacity;
+      varying vec2 vUv;
+      void main() {
+        vec4 source = texture2D(cloudMap, vUv);
+        // GIBS uses a categorical cloud-fraction palette. Red/yellow bins are
+        // cloud signal; transparent pixels are missing/no-data areas.
+        float cloudSignal = smoothstep(0.03, 0.24, source.r - source.b);
+        float alpha = source.a * cloudSignal * opacity;
+        gl_FragColor = vec4(cloudColor, alpha);
       }
     `,
     transparent: true,
