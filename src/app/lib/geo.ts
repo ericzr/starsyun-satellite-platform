@@ -55,7 +55,19 @@ export function bboxAreaKm2(b: BBox): number {
   const [w, s, e, n] = b;
   const south = deg2rad(Math.max(-90, Math.min(90, s)));
   const north = deg2rad(Math.max(-90, Math.min(90, n)));
-  const longitudeSpan = Math.abs(e - w) > 360 ? 360 : Math.abs(e - w);
+  // MapLibre can return longitudes outside [-180, 180] when the world wraps.
+  // Normalize the endpoints first and use the smaller arc for dateline-crossing boxes.
+  const normalizeLng = (lng: number) => ((lng + 180) % 360 + 360) % 360 - 180;
+  const west = normalizeLng(w);
+  const east = normalizeLng(e);
+  const normalizedSpan = Math.abs(east - west);
+  const originalSpan = Math.abs(e - w);
+  // Keep explicitly unwrapped bboxes (e.g. 179..181) intact. For ordinary
+  // [-180, 180] endpoints, choose the shorter arc when the box crosses the
+  // antimeridian (e.g. 179..-179).
+  const longitudeSpan = originalSpan <= 180
+    ? originalSpan
+    : Math.min(normalizedSpan, 360 - normalizedSpan);
   const dLon = deg2rad(longitudeSpan);
   const eccentricity = Math.sqrt(EARTH_E2);
   const stripArea = (latitude: number) => {
@@ -120,7 +132,7 @@ export function bboxCenter(b: BBox): [number, number] {
 }
 
 export function fmtArea(km2: number): string {
-  if (km2 >= 1000) return `${(km2 / 1000).toFixed(1)}k`;
+  if (km2 >= 1000) return `${(km2 / 1000).toFixed(2)}k`;
   if (km2 >= 100) return km2.toFixed(0);
   if (km2 >= 10) return km2.toFixed(1);
   return km2.toFixed(2);

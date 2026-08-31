@@ -256,6 +256,20 @@ export function MapCanvas({
   function bindDrawing(map: MlMap) {
     let start: ML.LngLat | null = null;
     const getDraft = () => map.getSource('draft') as ML.GeoJSONSource | undefined;
+    const normalizeLng = (lng: number) => ((lng + 180) % 360 + 360) % 360 - 180;
+    const makeBBox = (a: ML.LngLat, b: ML.LngLat): BBox => {
+      const west = normalizeLng(a.lng);
+      const east = normalizeLng(b.lng);
+      const direct = Math.abs(east - west);
+      // Preserve the narrow rectangle if the drag crossed the date line.
+      if (direct <= 180) {
+        return [Math.min(west, east), Math.min(a.lat, b.lat), Math.max(west, east), Math.max(a.lat, b.lat)];
+      }
+      // Keep east > west in an unwrapped coordinate space (e.g. 179..181).
+      const adjustedWest = west < east ? west + 360 : west;
+      const adjustedEast = west < east ? east : east + 360;
+      return [Math.min(adjustedWest, adjustedEast), Math.min(a.lat, b.lat), Math.max(adjustedWest, adjustedEast), Math.max(a.lat, b.lat)];
+    };
 
     map.on('mousedown', (e) => {
       if (!propsRef.current.drawing) return;
@@ -263,22 +277,12 @@ export function MapCanvas({
     });
     map.on('mousemove', (e) => {
       if (!propsRef.current.drawing || !start) return;
-      const bbox: BBox = [
-        Math.min(start.lng, e.lngLat.lng),
-        Math.min(start.lat, e.lngLat.lat),
-        Math.max(start.lng, e.lngLat.lng),
-        Math.max(start.lat, e.lngLat.lat),
-      ];
+      const bbox = makeBBox(start, e.lngLat);
       getDraft()?.setData({ type: 'FeatureCollection', features: [bboxToPolygon(bbox)] });
     });
     map.on('mouseup', (e) => {
       if (!propsRef.current.drawing || !start) return;
-      const bbox: BBox = [
-        Math.min(start.lng, e.lngLat.lng),
-        Math.min(start.lat, e.lngLat.lat),
-        Math.max(start.lng, e.lngLat.lng),
-        Math.max(start.lat, e.lngLat.lat),
-      ];
+      const bbox = makeBBox(start, e.lngLat);
       start = null;
       getDraft()?.setData({ type: 'FeatureCollection', features: [] });
       if (Math.abs(bbox[2] - bbox[0]) > 0.001 && Math.abs(bbox[3] - bbox[1]) > 0.001) {

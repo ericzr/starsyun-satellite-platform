@@ -488,7 +488,7 @@ export function Explore() {
               {fmtArea(areaKm2)} <span className="text-xs text-muted-foreground sm:text-sm">{lang === 'zh' ? 'km²' : 'km²'}</span>
             </div>
             <div className="font-mono text-[9px] text-muted-foreground sm:text-[10px]">
-              {aoi[1].toFixed(3)}, {aoi[0].toFixed(3)} → {aoi[3].toFixed(3)}, {aoi[2].toFixed(3)}
+              {aoi[1].toFixed(5)}, {aoi[0].toFixed(5)} → {aoi[3].toFixed(5)}, {aoi[2].toFixed(5)}
             </div>
           </div>
         )}
