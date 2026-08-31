@@ -340,6 +340,9 @@ function applyMapLanguage(map: MlMap, lang: Lang) {
 }
 
 function ensureLayers(map: MlMap, accent: string) {
+  // Footprints are contextual coverage previews, not the active AOI. Keep
+  // them neutral and quiet so overlapping scenes do not overpower the map.
+  const footprintColor = accent === ACCENT_DARK ? '#a3a3a3' : '#737373';
   const empty = { type: 'FeatureCollection', features: [] } as GeoJSON.FeatureCollection;
   if (!map.getSource('footprints')) map.addSource('footprints', { type: 'geojson', data: empty });
   if (!map.getSource('aoi')) map.addSource('aoi', { type: 'geojson', data: empty });
@@ -351,8 +354,8 @@ function ensureLayers(map: MlMap, accent: string) {
       type: 'fill',
       source: 'footprints',
       paint: {
-        'fill-color': accent,
-        'fill-opacity': ['case', ['==', ['get', 'active'], 1], 0.28, 0.08],
+        'fill-color': footprintColor,
+        'fill-opacity': ['case', ['==', ['get', 'active'], 1], 0.1, 0.025],
       },
     });
   }
@@ -362,9 +365,9 @@ function ensureLayers(map: MlMap, accent: string) {
       type: 'line',
       source: 'footprints',
       paint: {
-        'line-color': accent,
-        'line-width': ['case', ['==', ['get', 'active'], 1], 2, 0.8],
-        'line-opacity': ['case', ['==', ['get', 'active'], 1], 1, 0.4],
+        'line-color': footprintColor,
+        'line-width': ['case', ['==', ['get', 'active'], 1], 1.25, 0.5],
+        'line-opacity': ['case', ['==', ['get', 'active'], 1], 0.55, 0.16],
       },
     });
   }
