@@ -50,7 +50,14 @@ function loadMapLibre(): Promise<typeof ML> {
 }
 
 const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const STYLES: Record<'light' | 'dark', ML.StyleSpecification> = {
+const OPENFREEMAP_STYLES = {
+  light: 'https://tiles.openfreemap.org/styles/positron',
+  dark: 'https://tiles.openfreemap.org/styles/dark',
+};
+const CARTO_KEY = (import.meta.env.VITE_CARTO_API_KEY as string | undefined)?.trim();
+const CARTO_STYLE_URL = (import.meta.env.VITE_MAP_STYLE_URL as string | undefined)?.trim();
+
+const OSM_STYLES: Record<'light' | 'dark', ML.StyleSpecification> = {
   light: {
     version: 8,
     sources: { osm: { type: 'raster', tiles: [OSM_TILES], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
@@ -78,6 +85,22 @@ const STYLES: Record<'light' | 'dark', ML.StyleSpecification> = {
     ],
   },
 };
+
+type BaseLayerMode = 'carto' | 'openfreemap' | 'osm';
+
+function cartoStyleUrl(theme: 'light' | 'dark') {
+  const configured = CARTO_STYLE_URL || `https://basemaps.cartocdn.com/gl/${theme === 'dark' ? 'dark-matter' : 'positron'}-gl-style/style.json`;
+  if (!CARTO_KEY) return OPENFREEMAP_STYLES[theme];
+  const url = configured.replace(/(dark-matter|positron)(?=-gl-style)/, theme === 'dark' ? 'dark-matter' : 'positron');
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}api_key=${encodeURIComponent(CARTO_KEY)}`;
+}
+
+function getBasemapStyle(mode: BaseLayerMode, theme: 'light' | 'dark'): ML.StyleSpecification | string {
+  if (mode === 'osm') return OSM_STYLES[theme];
+  if (mode === 'openfreemap') return OPENFREEMAP_STYLES[theme];
+  return cartoStyleUrl(theme);
+}
 
 const NASA_LAYER_DATE = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 const NASA_VIIRS_TILES = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${NASA_LAYER_DATE}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
@@ -129,7 +152,8 @@ export function MapCanvas({
   const { resolvedTheme } = useTheme();
   const { lang, t } = useI18n();
   const theme = resolvedTheme === 'light' ? 'light' : 'dark';
-  const [layerMode, setLayerMode] = useState<'base' | 'satellite'>('base');
+  const [baseLayerMode, setBaseLayerMode] = useState<BaseLayerMode>('carto');
+  const [nasaVisible, setNasaVisible] = useState(false);
   const [layerMenuOpen, setLayerMenuOpen] = useState(false);
 
   // keep latest props for event handlers
@@ -143,8 +167,10 @@ export function MapCanvas({
   accentRef.current = accent;
   const languageRef = useRef(lang);
   languageRef.current = lang;
-  const layerModeRef = useRef(layerMode);
-  layerModeRef.current = layerMode;
+  const baseLayerModeRef = useRef(baseLayerMode);
+  baseLayerModeRef.current = baseLayerMode;
+  const nasaVisibleRef = useRef(nasaVisible);
+  nasaVisibleRef.current = nasaVisible;
 
   // Initialize map once.
   useEffect(() => {
@@ -156,7 +182,7 @@ export function MapCanvas({
       if (cancelled || !containerRef.current || mapRef.current) return;
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: STYLES[theme],
+        style: getBasemapStyle(baseLayerModeRef.current, theme),
         center,
         zoom,
         interactive,
@@ -176,7 +202,7 @@ export function MapCanvas({
         ensureLayers(map!, accentRef.current);
         applyMapLanguage(map!, languageRef.current);
         pushData(map!);
-        syncLayerVisibility(map!, layerModeRef.current);
+        syncLayerVisibility(map!, nasaVisibleRef.current);
         const initialFocus = focusRef.current;
         if (initialFocus) {
           map!.flyTo({ center: initialFocus.center, zoom: initialFocus.zoom, speed: 1.4, essential: true });
@@ -187,7 +213,7 @@ export function MapCanvas({
           ensureLayers(map!, accentRef.current);
           applyMapLanguage(map!, languageRef.current);
           pushData(map!);
-          syncLayerVisibility(map!, layerModeRef.current);
+          syncLayerVisibility(map!, nasaVisibleRef.current);
         }
       });
       bindDrawing(map);
@@ -215,14 +241,6 @@ export function MapCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Theme change → swap basemap style.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !readyRef.current) return;
-    map.setStyle(STYLES[theme]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme]);
-
   // Keep basemap labels in sync with the application's selected language.
   useEffect(() => {
     const map = mapRef.current;
@@ -234,8 +252,14 @@ export function MapCanvas({
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
     ensureLayers(map, accentRef.current);
-    syncLayerVisibility(map, layerMode);
-  }, [layerMode]);
+    syncLayerVisibility(map, nasaVisible);
+  }, [nasaVisible]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    map.setStyle(getBasemapStyle(baseLayerMode, theme));
+  }, [baseLayerMode, theme]);
 
   // Push overlay data when inputs change.
   const dataRef = useRef({ aoi, boundary, footprints, highlightId });
@@ -387,21 +411,35 @@ export function MapCanvas({
             <div className="absolute bottom-11 right-0 min-w-44 rounded-md border border-border bg-card/95 p-1.5 text-xs text-foreground shadow-lg backdrop-blur">
               <button
                 type="button"
-                onClick={() => { setLayerMode('base'); setLayerMenuOpen(false); }}
-                className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${layerMode === 'base' ? 'bg-accent' : ''}`}
+                onClick={() => { setBaseLayerMode('carto'); setNasaVisible(false); setLayerMenuOpen(false); }}
+                className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${baseLayerMode === 'carto' && !nasaVisible ? 'bg-accent' : ''}`}
               >
-                <span>{t.explore.mapBaseLayer}</span>
-                {layerMode === 'base' && <span aria-hidden="true">✓</span>}
+                <span>{t.explore.mapCartoLayer}</span>
+                {baseLayerMode === 'carto' && !nasaVisible && <span aria-hidden="true">✓</span>}
               </button>
               <button
                 type="button"
-                onClick={() => { setLayerMode('satellite'); setLayerMenuOpen(false); }}
-                className={`mt-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${layerMode === 'satellite' ? 'bg-accent' : ''}`}
+                onClick={() => { setBaseLayerMode('openfreemap'); setNasaVisible(false); setLayerMenuOpen(false); }}
+                className={`mt-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${baseLayerMode === 'openfreemap' && !nasaVisible ? 'bg-accent' : ''}`}
               >
-                <span>
-                  {t.explore.mapSatelliteLayer}
-                </span>
-                {layerMode === 'satellite' && <span aria-hidden="true">✓</span>}
+                <span>{t.explore.mapOpenFreeMapLayer}</span>
+                {baseLayerMode === 'openfreemap' && !nasaVisible && <span aria-hidden="true">✓</span>}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setBaseLayerMode('osm'); setNasaVisible(false); setLayerMenuOpen(false); }}
+                className={`mt-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${baseLayerMode === 'osm' && !nasaVisible ? 'bg-accent' : ''}`}
+              >
+                <span>{t.explore.mapOsmLayer}</span>
+                {baseLayerMode === 'osm' && !nasaVisible && <span aria-hidden="true">✓</span>}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setNasaVisible(true); setLayerMenuOpen(false); }}
+                className={`mt-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${nasaVisible ? 'bg-accent' : ''}`}
+              >
+                <span>{t.explore.mapSatelliteLayer}</span>
+                {nasaVisible && <span aria-hidden="true">✓</span>}
               </button>
             </div>
           )}
@@ -541,7 +579,7 @@ function ensureLayers(map: MlMap, accent: string) {
   }
 }
 
-function syncLayerVisibility(map: MlMap, mode: 'base' | 'satellite') {
+function syncLayerVisibility(map: MlMap, visible: boolean) {
   if (!map.getLayer('nasa-viirs-layer')) return;
-  map.setLayoutProperty('nasa-viirs-layer', 'visibility', mode === 'satellite' ? 'visible' : 'none');
+  map.setLayoutProperty('nasa-viirs-layer', 'visibility', visible ? 'visible' : 'none');
 }

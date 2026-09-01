@@ -119,7 +119,10 @@ cp .env.example .env
 主要环境变量：
 - `VITE_API_BASE_URL` - API 服务地址
 - `VITE_MAP_STYLE_URL` - 地图样式 URL
+- `VITE_CARTO_API_KEY` - 可选的 Carto 公共地图 Key；在 Carto Dashboard 的 API Keys 中创建，并限制允许的域名
 - `VITE_ENABLE_MOCK_DATA` - 是否使用 mock 数据
+
+地图图层说明：地图右下角“切换图层”提供 Carto 黑客风底图、无需 Key 的 OpenFreeMap 黑白底图、OpenStreetMap 瓦片和 NASA 影像。未配置 `VITE_CARTO_API_KEY` 时，Carto 入口会自动使用 OpenFreeMap 作为免费回退，避免出现空白地图。
 
 ### 添加新页面
 
