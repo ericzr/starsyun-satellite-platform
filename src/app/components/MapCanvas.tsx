@@ -49,9 +49,34 @@ function loadMapLibre(): Promise<typeof ML> {
   return maplibrePromise;
 }
 
-const STYLES = {
-  dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-  light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const STYLES: Record<'light' | 'dark', ML.StyleSpecification> = {
+  light: {
+    version: 8,
+    sources: { osm: { type: 'raster', tiles: [OSM_TILES], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': '#e5e7eb' } },
+      { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-opacity': 0.92, 'raster-fade-duration': 0 } },
+    ],
+  },
+  dark: {
+    version: 8,
+    sources: { osm: { type: 'raster', tiles: [OSM_TILES], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': '#08090b' } },
+      {
+        id: 'osm', type: 'raster', source: 'osm',
+        paint: {
+          'raster-opacity': 0.78,
+          'raster-saturation': -1,
+          'raster-contrast': 0.25,
+          'raster-brightness-min': 0.08,
+          'raster-brightness-max': 0.48,
+          'raster-fade-duration': 0,
+        },
+      },
+    ],
+  },
 };
 
 const NASA_LAYER_DATE = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -68,6 +93,7 @@ interface MapCanvasProps {
   interactive?: boolean;
   className?: string;
   aoi?: BBox | null;
+  boundary?: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null;
   footprints?: Footprint[];
   highlightId?: string | null;
   drawing?: boolean;
@@ -87,6 +113,7 @@ export function MapCanvas({
   interactive = true,
   className,
   aoi = null,
+  boundary = null,
   footprints = [],
   highlightId = null,
   drawing = false,
@@ -211,14 +238,14 @@ export function MapCanvas({
   }, [layerMode]);
 
   // Push overlay data when inputs change.
-  const dataRef = useRef({ aoi, footprints, highlightId });
-  dataRef.current = { aoi, footprints, highlightId };
+  const dataRef = useRef({ aoi, boundary, footprints, highlightId });
+  dataRef.current = { aoi, boundary, footprints, highlightId };
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
     pushData(map);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aoi, footprints, highlightId]);
+  }, [aoi, boundary, footprints, highlightId]);
 
   // Focus (fly to)
   useEffect(() => {
@@ -254,7 +281,7 @@ export function MapCanvas({
   }, [drawing]);
 
   function pushData(map: MlMap) {
-    const { aoi, footprints, highlightId } = dataRef.current;
+    const { aoi, boundary, footprints, highlightId } = dataRef.current;
     const fpSrc = map.getSource('footprints') as ML.GeoJSONSource | undefined;
     if (fpSrc) {
       fpSrc.setData({
@@ -269,11 +296,17 @@ export function MapCanvas({
     const aoiSrc = map.getSource('aoi') as ML.GeoJSONSource | undefined;
     if (aoiSrc) {
       aoiSrc.setData(
-        aoi
+        aoi && !boundary
           ? { type: 'FeatureCollection', features: [bboxToPolygon(aoi)] }
           : { type: 'FeatureCollection', features: [] },
       );
     }
+    const boundarySrc = map.getSource('boundary') as ML.GeoJSONSource | undefined;
+    boundarySrc?.setData(
+      boundary
+        ? { type: 'FeatureCollection', features: [boundary] }
+        : { type: 'FeatureCollection', features: [] },
+    );
   }
 
   function bindDrawing(map: MlMap) {
@@ -331,7 +364,7 @@ export function MapCanvas({
   }
 
   return (
-    <div className={`relative ${className ?? ''}`}>
+    <div className={`map-theme-${theme} relative ${className ?? ''}`}>
       <div
         ref={containerRef}
         className="absolute inset-0 size-full"
@@ -432,6 +465,7 @@ function ensureLayers(map: MlMap, accent: string) {
   }
   if (!map.getSource('footprints')) map.addSource('footprints', { type: 'geojson', data: empty });
   if (!map.getSource('aoi')) map.addSource('aoi', { type: 'geojson', data: empty });
+  if (!map.getSource('boundary')) map.addSource('boundary', { type: 'geojson', data: empty });
   if (!map.getSource('draft')) map.addSource('draft', { type: 'geojson', data: empty });
 
   if (!map.getLayer('footprints-fill')) {
@@ -463,6 +497,22 @@ function ensureLayers(map: MlMap, accent: string) {
       type: 'fill',
       source: 'aoi',
       paint: { 'fill-color': accent, 'fill-opacity': 0.06 },
+    });
+  }
+  if (!map.getLayer('boundary-fill')) {
+    map.addLayer({
+      id: 'boundary-fill',
+      type: 'fill',
+      source: 'boundary',
+      paint: { 'fill-color': accent, 'fill-opacity': 0.035 },
+    });
+  }
+  if (!map.getLayer('boundary-line')) {
+    map.addLayer({
+      id: 'boundary-line',
+      type: 'line',
+      source: 'boundary',
+      paint: { 'line-color': accent, 'line-width': 2.2, 'line-opacity': 0.82 },
     });
   }
   if (!map.getLayer('aoi-line')) {

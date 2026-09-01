@@ -4,7 +4,7 @@ import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List,
 import { motion } from 'motion/react';
 import { useI18n } from '../i18n';
 import { ADMINISTRATIVE_AREAS, PRODUCTS, REGIONS, type Product } from '../data/products';
-import { coverageRatio, intersects, bboxAreaKm2, fmtArea, parseCoords, parseVectorFile, type BBox } from '../lib/geo';
+import { coverageRatio, intersects, bboxAreaKm2, geometryAreaKm2, fmtArea, parseCoords, parseVectorFile, type BBox } from '../lib/geo';
 import { MapCanvas, type Footprint } from '../components/MapCanvas';
 import { FilterPanel, DEFAULT_FILTERS, type Filters } from '../components/FilterPanel';
 import { ResultCard } from '../components/ResultCard';
@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '../components/ui/
 import { useInquiryDraft } from '../context/InquiryContext';
 import { useCart } from '../context/CartContext';
 import { searchEarthSearch } from '../services/stac';
-import { fetchGlobalCities, fetchGlobalCountries, geocodeGlobalCity, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
+import { fetchGlobalCities, fetchGlobalCountries, geocodeAdministrativeArea, geocodeGlobalCity, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
 import { toast } from 'sonner';
 
 const LOCAL_COUNTRY_ISO: Record<string, string> = {
@@ -40,6 +40,8 @@ const LOCAL_CITY_LABELS: Record<string, string> = {
   Dongsheng: '东胜区', Erenhot: '二连浩特市', 'E’erguna': '额尔古纳市', Genhe: '根河市', Hailar: '海拉尔区', Hohhot: '呼和浩特市',
   Hulunbuir: '呼伦贝尔市', 'Hulunbuir Region': '呼伦贝尔市', Manzhouli: '满洲里市', Ordos: '鄂尔多斯市', 'Ordos Shi': '鄂尔多斯市',
   Tongliao: '通辽市', Ulanhot: '乌兰浩特市', Wuhai: '乌海市', 'Xilin Gol Meng': '锡林郭勒盟', 'Xilin Hot': '锡林浩特市', Yakeshi: '牙克石市', Zhalantun: '扎兰屯市',
+  'Jalai Nur': '扎赉诺尔区', Jiagedaqi: '加格达奇区', Jining: '集宁区', Mositai: '莫斯泰', Mujiayingzi: '木家营子',
+  'Oroqen Zizhiqi': '鄂伦春自治旗', Pingzhuang: '平庄', Salaqi: '萨拉齐', Shiguai: '石拐区', Wenquan: '温泉', Wuda: '乌达区',
 };
 
 function countryLabel(country: GlobalCountry, lang: string) {
@@ -127,10 +129,12 @@ export function Explore() {
   const [globalCities, setGlobalCities] = useState<GlobalCity[]>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const cityRequestRef = useRef(0);
+  const adminGeoRequestRef = useRef(0);
   const [vectorName, setVectorName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [regionId, setRegionId] = useState<string | null>(null);
   const [aoi, setAoi] = useState<BBox | null>(null);
+  const [boundary, setBoundary] = useState<GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -173,6 +177,7 @@ export function Explore() {
     setDrawing(false);
     setSearch(query);
     setAoi(null);
+    setBoundary(null);
     setVectorName('');
     const coords = parseCoords(query);
     if (coords) {
@@ -218,8 +223,9 @@ export function Explore() {
   }
 
   async function selectGlobalCity(city: GlobalCity) {
+    adminGeoRequestRef.current += 1;
     focusKey.current += 1;
-    setAoi(null);
+    setBoundary(null);
     const region = REGIONS.find((item) => item.aliases.some((alias) => alias.toLowerCase() === city.name.toLowerCase()));
     setRegionId(region?.id ?? null);
     const country = globalCountries.find((item) => item.iso2 === adminCountry);
@@ -227,19 +233,49 @@ export function Explore() {
     const selectedState = adminLevel1;
     const displayName = cityLabel(city, localCountry, selectedState, lang);
     setSearch(displayName);
+    // Keep known business regions responsive while the exact administrative
+    // boundary is fetched in the background.
     if (region) {
+      setAoi(regionSearchBbox(region));
       setFocus({ center: region.center, zoom: region.zoom, key: focusKey.current });
       setRemoteBbox(regionSearchBbox(region));
-      return;
     }
-    const resolved = city.lat && city.lon
-      ? city
-      : country ? await geocodeGlobalCity(country.name, selectedState, city.name).catch(() => null) : null;
-    if (!resolved || !Number.isFinite(resolved.lat) || !Number.isFinite(resolved.lon)) {
+    const resolved = country
+      ? await geocodeGlobalCity(country.name, selectedState, city.name, lang === 'zh' ? 'zh' : 'en').catch(() => null)
+      : null;
+    const located = resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)
+      ? resolved
+      : city.lat && city.lon ? city : null;
+    if (!located || !Number.isFinite(located.lat) || !Number.isFinite(located.lon)) {
+      if (region) {
+        return;
+      }
       toast.error(lang === 'zh' ? '该城市暂时无法定位，请输入坐标或直接在地图绘制区域' : 'This city could not be located. Enter coordinates or draw an area.');
       return;
     }
-    setFocus({ center: [resolved.lon, resolved.lat], zoom: 11, key: focusKey.current });
+    setBoundary(located.boundary ?? null);
+    setAoi(located.bbox ?? pointSearchBbox([located.lon, located.lat]));
+    setFocus({ center: [located.lon, located.lat], zoom: located.boundary ? 10 : 11, key: focusKey.current });
+    setRemoteBbox(located.bbox ?? pointSearchBbox([located.lon, located.lat]));
+  }
+
+  async function selectGlobalState(state: string) {
+    const requestId = ++adminGeoRequestRef.current;
+    setAdminLevel1(state);
+    setAdminLevel2('');
+    setGlobalCities([]);
+    setBoundary(null);
+    const country = globalCountries.find((item) => item.iso2 === adminCountry);
+    const localCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === adminCountry);
+    const countryName = country?.name ?? localCountry?.nameEn;
+    if (!countryName) return;
+    const resolved = await geocodeAdministrativeArea(countryName, state, lang === 'zh' ? 'zh' : 'en').catch(() => null);
+    if (requestId !== adminGeoRequestRef.current || !resolved || !Number.isFinite(resolved.lat) || !Number.isFinite(resolved.lon)) return;
+    focusKey.current += 1;
+    setRegionId(null);
+    setBoundary(resolved.boundary ?? null);
+    setAoi(resolved.bbox ?? pointSearchBbox([resolved.lon, resolved.lat]));
+    setFocus({ center: [resolved.lon, resolved.lat], zoom: resolved.boundary ? 6 : 7, key: focusKey.current });
     setRemoteBbox(resolved.bbox ?? pointSearchBbox([resolved.lon, resolved.lat]));
   }
 
@@ -249,6 +285,7 @@ export function Explore() {
     syncAdminSelection(region.id);
     setRegionId(region.id);
     setAoi(null);
+    setBoundary(null);
     setFocus({ center: region.center, zoom: region.zoom, key: focusKey.current });
     setRemoteBbox(regionSearchBbox(region));
   }
@@ -306,6 +343,7 @@ export function Explore() {
       focusKey.current += 1;
       setVectorName(file.name);
       setAoi(bbox);
+      setBoundary(null);
       setRegionId(null);
       setAdminCountry('');
       setAdminLevel1('');
@@ -355,6 +393,9 @@ export function Explore() {
                   setAdminLevel1('');
                   setAdminLevel2('');
                   setGlobalCities([]);
+                  setAoi(null);
+                  setBoundary(null);
+                  setRemoteBbox(null);
                   const country = globalCountries.find((item) => item.iso2 === event.target.value);
                   setGlobalStates(country?.states ?? localCountry?.subdivisions.map((area) => ({ name: area.name })) ?? []);
                 }}
@@ -370,9 +411,7 @@ export function Explore() {
                 value={adminLevel1}
                 disabled={!selectedCountry}
                 onChange={(event) => {
-                  setAdminLevel1(event.target.value);
-                  setAdminLevel2('');
-                  setGlobalCities([]);
+                  void selectGlobalState(event.target.value);
                 }}
                 className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -497,7 +536,7 @@ export function Explore() {
     [results],
   );
 
-  const areaKm2 = aoi ? bboxAreaKm2(aoi) : 0;
+  const areaKm2 = boundary ? geometryAreaKm2(boundary.geometry) : aoi ? bboxAreaKm2(aoi) : 0;
 
   const compareProducts = useMemo(
     () => compareIds.map((id) => sourceProducts.find((p) => p.id === id)!).filter(Boolean),
@@ -606,12 +645,14 @@ export function Explore() {
           center={[30, 20]}
           zoom={1.6}
           aoi={aoi}
+          boundary={boundary}
           footprints={footprints}
           highlightId={highlightId}
           drawing={drawing}
           focus={focus}
           onDraw={(b) => {
             setAoi(b);
+            setBoundary(null);
             setDrawing(false);
             setRemoteBbox(b);
           }}
@@ -651,6 +692,7 @@ export function Explore() {
                 className="bg-card/90 backdrop-blur"
                 onClick={() => {
                   setAoi(null);
+                  setBoundary(null);
                   setVectorName('');
                   if (regionId) {
                     const region = REGIONS.find((item) => item.id === regionId);

@@ -195,6 +195,36 @@
 }
 
 @layer utilities {
+  /* MapLibre's bundled controls use a fixed white skin. Keep their chrome
+     aligned with the application's monochrome theme in both modes. */
+  .map-theme-light .maplibregl-ctrl-group {
+    overflow: hidden;
+    border: 1px solid rgba(0, 0, 0, 0.16);
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  }
+
+  .map-theme-light .maplibregl-ctrl-group button {
+    background-color: #ffffff;
+    border-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .map-theme-dark .maplibregl-ctrl-group {
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: #101012;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  }
+
+  .map-theme-dark .maplibregl-ctrl-group button {
+    background-color: #101012;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .map-theme-dark .maplibregl-ctrl-group .maplibregl-ctrl-icon {
+    filter: invert(1);
+  }
+
   .font-mono {
     font-family: var(--font-mono);
   }

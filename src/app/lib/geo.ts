@@ -125,6 +125,30 @@ export function bboxCenter(b: BBox): [number, number] {
   return [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
 }
 
+/** Approximate WGS84 surface area for Polygon/MultiPolygon geometries in km². */
+export function geometryAreaKm2(
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+): number {
+  const ringArea = (ring: number[][]) => {
+    if (ring.length < 4) return 0;
+    const radius = 6371.0088;
+    let area = 0;
+    for (let index = 0; index < ring.length - 1; index += 1) {
+      const [lon1, lat1] = ring[index];
+      const [lon2, lat2] = ring[index + 1];
+      area += deg2rad(lon2 - lon1) * (Math.sin(deg2rad(lat1)) + Math.sin(deg2rad(lat2)));
+    }
+    return Math.abs(area * radius * radius / 2);
+  };
+  const polygonArea = (polygon: number[][][]) => {
+    if (!polygon.length) return 0;
+    return Math.max(0, ringArea(polygon[0]) - polygon.slice(1).reduce((sum, ring) => sum + ringArea(ring), 0));
+  };
+  return geometry.type === 'Polygon'
+    ? polygonArea(geometry.coordinates)
+    : geometry.coordinates.reduce((sum, polygon) => sum + polygonArea(polygon), 0);
+}
+
 export function fmtArea(km2: number): string {
   if (km2 >= 1000) return `${(km2 / 1000).toFixed(2)}k`;
   if (km2 >= 100) return km2.toFixed(0);
@@ -134,7 +158,7 @@ export function fmtArea(km2: number): string {
 
 /** Parse latitude/longitude text in either "lat, lon" or "lon, lat" order. */
 export function parseCoords(input: string): [number, number] | null {
-  const normalized = input.trim().replace(/[，、]/g, ',').replace(/[º°]/g, '').replace(/\s+/g, ' ');
+  const normalized = input.trim().replace(/^[gG]\s*/, '').replace(/[，、]/g, ',').replace(/[º°]/g, '').replace(/\s+/g, ' ');
   const match = normalized.match(/^([NSWE])?\s*([-+]?\d+(?:\.\d+)?)\s*([NSWE])?\s*[,; ]\s*([NSWE])?\s*([-+]?\d+(?:\.\d+)?)\s*([NSWE])?$/i);
   if (!match) return null;
   const first = Number(match[2]);

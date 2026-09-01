@@ -52,9 +52,6 @@ export function LangToggle() {
 
       {open && (
         <div className="absolute right-0 top-full z-50 mt-2 w-48 rounded-md border border-border bg-popover p-2 shadow-md">
-          <div className="px-2 py-1.5 text-xs text-muted-foreground">
-            Select Language
-          </div>
           <div className="space-y-1">
             {primaryLangs.map((l) => (
               <button

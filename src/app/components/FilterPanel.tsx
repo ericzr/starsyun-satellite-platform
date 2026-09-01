@@ -269,43 +269,29 @@ export function FilterPanel({
       {/* Resolution */}
       <div className="space-y-2">
         <Label className="text-xs">{t.explore.fltResolution}</Label>
+        <Select
+          value={filters.resMode === 'range' ? 'custom' : filters.resMax}
+          onValueChange={(v) => {
+            if (v === 'custom') onChange({ ...filters, resMode: 'range', resMaxCustom: filters.resMaxCustom });
+            else onChange({ ...filters, resMode: 'preset', resMax: v, resMin: undefined, resMaxCustom: undefined });
+          }}
+        >
+          <SelectTrigger className="h-9 w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t.common.all}</SelectItem>
+            <SelectItem value="0.3">≤ 0.3m ({lang === 'zh' ? '超高分' : 'Ultra-High'})</SelectItem>
+            <SelectItem value="0.5">≤ 0.5m ({lang === 'zh' ? '高分' : 'High'})</SelectItem>
+            <SelectItem value="1">≤ 1m ({lang === 'zh' ? '中高分' : 'Medium-High'})</SelectItem>
+            <SelectItem value="2.5">≤ 2.5m ({lang === 'zh' ? '中分' : 'Medium'})</SelectItem>
+            <SelectItem value="5">≤ 5m</SelectItem>
+            <SelectItem value="10">≤ 10m</SelectItem>
+            <SelectItem value="30">≤ 30m ({lang === 'zh' ? '低分' : 'Low'})</SelectItem>
+            <SelectItem value="custom">{lang === 'zh' ? '自定义精度' : 'Custom resolution'}</SelectItem>
+          </SelectContent>
+        </Select>
 
-        {/* Resolution Mode Selector */}
-        <div className="flex gap-1.5">
-          <Chip
-            active={filters.resMode === 'preset'}
-            onClick={() => onChange({ ...filters, resMode: 'preset' })}
-          >
-            {lang === 'zh' ? '快捷' : 'Quick'}
-          </Chip>
-          <Chip
-            active={filters.resMode === 'range'}
-            onClick={() => onChange({ ...filters, resMode: 'range' })}
-          >
-              {lang === 'zh' ? '输入精度' : 'Custom resolution'}
-          </Chip>
-        </div>
-
-        {/* Preset Mode */}
-        {filters.resMode === 'preset' && (
-          <Select value={filters.resMax} onValueChange={(v) => onChange({ ...filters, resMax: v })}>
-            <SelectTrigger className="h-9 w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t.common.all}</SelectItem>
-              <SelectItem value="0.3">≤ 0.3m ({lang === 'zh' ? '超高分' : 'Ultra-High'})</SelectItem>
-              <SelectItem value="0.5">≤ 0.5m ({lang === 'zh' ? '高分' : 'High'})</SelectItem>
-              <SelectItem value="1">≤ 1m ({lang === 'zh' ? '中高分' : 'Medium-High'})</SelectItem>
-              <SelectItem value="2.5">≤ 2.5m ({lang === 'zh' ? '中分' : 'Medium'})</SelectItem>
-              <SelectItem value="5">≤ 5m</SelectItem>
-              <SelectItem value="10">≤ 10m</SelectItem>
-              <SelectItem value="30">≤ 30m ({lang === 'zh' ? '低分' : 'Low'})</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
-
-        {/* Custom resolution input */}
         {filters.resMode === 'range' && (
           <div className="space-y-2">
             <div className="space-y-1">
