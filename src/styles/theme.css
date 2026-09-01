@@ -237,15 +237,15 @@
     filter: none !important;
     background-repeat: no-repeat;
     background-position: center;
-    background-size: 14px 14px;
+    background-size: 18px 18px;
   }
 
   .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M7 2v10M2 7h10' stroke='%23fff' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpath d='M9 2v14M2 9h14' stroke='%23ffffff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E") !important;
   }
 
   .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-out {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M2 7h10' stroke='%23fff' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpath d='M2 9h14' stroke='%23ffffff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E") !important;
   }
 
   .font-mono {
