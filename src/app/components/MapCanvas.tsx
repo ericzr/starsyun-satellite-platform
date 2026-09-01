@@ -111,8 +111,13 @@ const SENTINEL2_TILES = (import.meta.env.VITE_SENTINEL2_TILES_URL as string | un
   || 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg';
 const ESRI_IMAGERY_TILES = (import.meta.env.VITE_ESRI_IMAGERY_TILES_URL as string | undefined)?.trim()
   || 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const AICGIS_TILES = (import.meta.env.VITE_AICGIS_TILES_URL as string | undefined)?.trim();
+const TIANDITU_TOKEN = (import.meta.env.VITE_TIANDITU_TOKEN as string | undefined)?.trim();
+const TIANDITU_TILES = TIANDITU_TOKEN
+  ? `https://t{s}.tianditu.gov.cn/DataServer?T=vec_w&x={x}&y={y}&l={z}&tk=${encodeURIComponent(TIANDITU_TOKEN)}`
+  : undefined;
 
-type SatelliteLayerMode = 'none' | 'nasa' | 'sentinel2' | 'esri';
+type SatelliteLayerMode = 'none' | 'nasa' | 'sentinel2' | 'esri' | 'aicgis' | 'tianditu';
 
 export interface Footprint {
   id: string;
@@ -180,6 +185,13 @@ export function MapCanvas({
   baseLayerModeRef.current = baseLayerMode;
   const satelliteLayerRef = useRef<SatelliteLayerMode>(satelliteLayer);
   satelliteLayerRef.current = satelliteLayer;
+  const activeLayerLabel = satelliteLayer === 'nasa' ? t.explore.mapSatelliteNasa
+    : satelliteLayer === 'sentinel2' ? t.explore.mapSatelliteSentinel
+      : satelliteLayer === 'esri' ? t.explore.mapSatelliteEsri
+        : satelliteLayer === 'aicgis' ? t.explore.mapSatelliteAicgis
+          : satelliteLayer === 'tianditu' ? t.explore.mapSatelliteTianditu
+            : baseLayerMode === 'carto' ? t.explore.mapCartoLayer
+              : baseLayerMode === 'openfreemap' ? t.explore.mapOpenFreeMapLayer : t.explore.mapOsmLayer;
 
   // Initialize map once.
   useEffect(() => {
@@ -407,14 +419,14 @@ export function MapCanvas({
         <div className="pointer-events-auto relative">
           <button
             type="button"
-            aria-label={t.explore.mapLayerSwitcher}
+            aria-label={activeLayerLabel}
             title={t.explore.mapLayerSwitcher}
             aria-expanded={layerMenuOpen}
             onClick={() => setLayerMenuOpen((open) => !open)}
             className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-card/95 px-2.5 text-xs text-foreground shadow-sm backdrop-blur transition-colors hover:bg-accent"
           >
             <Layers className="size-3.5" />
-            <span className="hidden sm:inline">{t.explore.mapLayerSwitcher}</span>
+            <span className="hidden sm:inline">{activeLayerLabel}</span>
           </button>
           {layerMenuOpen && (
             <div className="absolute bottom-11 right-0 min-w-44 rounded-md border border-border bg-card/95 p-1.5 text-xs text-foreground shadow-lg backdrop-blur">
@@ -426,6 +438,8 @@ export function MapCanvas({
               <LayerOption label={t.explore.mapSatelliteNasa} active={satelliteLayer === 'nasa'} onClick={() => { setSatelliteLayer('nasa'); setLayerMenuOpen(false); }} />
               <LayerOption label={t.explore.mapSatelliteSentinel} active={satelliteLayer === 'sentinel2'} onClick={() => { setSatelliteLayer('sentinel2'); setLayerMenuOpen(false); }} />
               <LayerOption label={t.explore.mapSatelliteEsri} active={satelliteLayer === 'esri'} onClick={() => { setSatelliteLayer('esri'); setLayerMenuOpen(false); }} />
+              <LayerOption label={t.explore.mapSatelliteAicgis} active={satelliteLayer === 'aicgis'} disabled={!AICGIS_TILES} onClick={() => { if (AICGIS_TILES) { setSatelliteLayer('aicgis'); setLayerMenuOpen(false); } }} />
+              <LayerOption label={t.explore.mapSatelliteTianditu} active={satelliteLayer === 'tianditu'} disabled={!TIANDITU_TILES} onClick={() => { if (TIANDITU_TILES) { setSatelliteLayer('tianditu'); setLayerMenuOpen(false); } }} />
               <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">{t.explore.mapLicensedSources}</div>
               <LayerOption label={t.explore.mapGoogleEarth} disabled />
               <LayerOption label={t.explore.mapJilin1} disabled />
@@ -514,6 +528,12 @@ function ensureLayers(map: MlMap, accent: string) {
       attribution: 'Esri World Imagery',
     });
   }
+  if (AICGIS_TILES && !map.getSource('aicgis')) {
+    map.addSource('aicgis', { type: 'raster', tiles: [AICGIS_TILES], tileSize: 256, maxzoom: 18, attribution: 'AICGIS' });
+  }
+  if (TIANDITU_TILES && !map.getSource('tianditu')) {
+    map.addSource('tianditu', { type: 'raster', tiles: [TIANDITU_TILES], tileSize: 256, maxzoom: 18, attribution: '天地图' });
+  }
   if (!map.getLayer('nasa-viirs-layer')) {
     map.addLayer({
       id: 'nasa-viirs-layer',
@@ -540,6 +560,12 @@ function ensureLayers(map: MlMap, accent: string) {
       layout: { visibility: 'none' },
       paint: { 'raster-opacity': 0.84, 'raster-fade-duration': 0 },
     });
+  }
+  if (AICGIS_TILES && !map.getLayer('aicgis-layer')) {
+    map.addLayer({ id: 'aicgis-layer', type: 'raster', source: 'aicgis', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.86, 'raster-fade-duration': 0 } });
+  }
+  if (TIANDITU_TILES && !map.getLayer('tianditu-layer')) {
+    map.addLayer({ id: 'tianditu-layer', type: 'raster', source: 'tianditu', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.86, 'raster-fade-duration': 0 } });
   }
   if (!map.getSource('footprints')) map.addSource('footprints', { type: 'geojson', data: empty });
   if (!map.getSource('aoi')) map.addSource('aoi', { type: 'geojson', data: empty });
@@ -624,6 +650,8 @@ function syncSatelliteLayer(map: MlMap, mode: SatelliteLayerMode) {
     nasa: 'nasa-viirs-layer',
     sentinel2: 'sentinel2-layer',
     esri: 'esri-imagery-layer',
+    aicgis: 'aicgis-layer',
+    tianditu: 'tianditu-layer',
   };
   for (const [key, layerId] of Object.entries(layers) as [Exclude<SatelliteLayerMode, 'none'>, string][]) {
     if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', key === mode ? 'visible' : 'none');

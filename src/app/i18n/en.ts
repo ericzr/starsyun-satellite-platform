@@ -121,6 +121,8 @@ export const en: Translation = {
     mapSatelliteNasa: 'NASA',
     mapSatelliteSentinel: 'Sentinel-2',
     mapSatelliteEsri: 'Esri',
+    mapSatelliteAicgis: 'AICGIS',
+    mapSatelliteTianditu: 'Tianditu',
     mapLicensedSources: 'Licensed sources',
     mapGoogleEarth: 'Google Earth (licensed)',
     mapJilin1: 'Jilin-1 (licensed)',

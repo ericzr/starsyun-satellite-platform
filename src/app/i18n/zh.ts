@@ -119,6 +119,8 @@ export const zh = {
     mapSatelliteNasa: 'NASA',
     mapSatelliteSentinel: 'Sentinel-2',
     mapSatelliteEsri: 'Esri',
+    mapSatelliteAicgis: 'AICGIS',
+    mapSatelliteTianditu: '天地图',
     mapLicensedSources: '合作图源',
     mapGoogleEarth: 'Google Earth（需授权）',
     mapJilin1: '吉林一号（需授权）',
