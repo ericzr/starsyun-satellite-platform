@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type * as ML from 'maplibre-gl';
+import { Layers } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useI18n, type Lang } from '../i18n';
 import type { BBox } from '../lib/geo';
@@ -53,6 +54,9 @@ const STYLES = {
   light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
 };
 
+const NASA_LAYER_DATE = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+const NASA_VIIRS_TILES = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${NASA_LAYER_DATE}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
+
 export interface Footprint {
   id: string;
   bbox: BBox;
@@ -96,8 +100,10 @@ export function MapCanvas({
   const mapRef = useRef<MlMap | null>(null);
   const readyRef = useRef(false);
   const { resolvedTheme } = useTheme();
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
   const theme = resolvedTheme === 'light' ? 'light' : 'dark';
+  const [layerMode, setLayerMode] = useState<'base' | 'satellite'>('base');
+  const [layerMenuOpen, setLayerMenuOpen] = useState(false);
 
   // keep latest props for event handlers
   const propsRef = useRef({ drawing, onDraw, onFootprintClick, onFootprintHover });
@@ -110,6 +116,8 @@ export function MapCanvas({
   accentRef.current = accent;
   const languageRef = useRef(lang);
   languageRef.current = lang;
+  const layerModeRef = useRef(layerMode);
+  layerModeRef.current = layerMode;
 
   // Initialize map once.
   useEffect(() => {
@@ -141,6 +149,7 @@ export function MapCanvas({
         ensureLayers(map!, accentRef.current);
         applyMapLanguage(map!, languageRef.current);
         pushData(map!);
+        syncLayerVisibility(map!, layerModeRef.current);
         const initialFocus = focusRef.current;
         if (initialFocus) {
           map!.flyTo({ center: initialFocus.center, zoom: initialFocus.zoom, speed: 1.4, essential: true });
@@ -151,6 +160,7 @@ export function MapCanvas({
           ensureLayers(map!, accentRef.current);
           applyMapLanguage(map!, languageRef.current);
           pushData(map!);
+          syncLayerVisibility(map!, layerModeRef.current);
         }
       });
       bindDrawing(map);
@@ -192,6 +202,13 @@ export function MapCanvas({
     if (!map || !readyRef.current) return;
     applyMapLanguage(map, lang);
   }, [lang]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    ensureLayers(map, accentRef.current);
+    syncLayerVisibility(map, layerMode);
+  }, [layerMode]);
 
   // Push overlay data when inputs change.
   const dataRef = useRef({ aoi, footprints, highlightId });
@@ -313,7 +330,49 @@ export function MapCanvas({
     });
   }
 
-  return <div ref={containerRef} className={className} />;
+  return (
+    <div className={`relative ${className ?? ''}`}>
+      <div ref={containerRef} className="absolute inset-0" />
+      <div className="pointer-events-none absolute bottom-3 right-16 z-10">
+        <div className="pointer-events-auto relative">
+          <button
+            type="button"
+            aria-label={t.explore.mapLayerSwitcher}
+            title={t.explore.mapLayerSwitcher}
+            aria-expanded={layerMenuOpen}
+            onClick={() => setLayerMenuOpen((open) => !open)}
+            className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-card/95 px-2.5 text-xs text-foreground shadow-sm backdrop-blur transition-colors hover:bg-accent"
+          >
+            <Layers className="size-3.5" />
+            <span className="hidden sm:inline">{t.explore.mapLayerSwitcher}</span>
+          </button>
+          {layerMenuOpen && (
+            <div className="absolute bottom-11 right-0 min-w-44 rounded-md border border-border bg-card/95 p-1.5 text-xs text-foreground shadow-lg backdrop-blur">
+              <button
+                type="button"
+                onClick={() => { setLayerMode('base'); setLayerMenuOpen(false); }}
+                className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${layerMode === 'base' ? 'bg-accent' : ''}`}
+              >
+                <span>{t.explore.mapBaseLayer}</span>
+                {layerMode === 'base' && <span aria-hidden="true">✓</span>}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLayerMode('satellite'); setLayerMenuOpen(false); }}
+                className={`mt-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${layerMode === 'satellite' ? 'bg-accent' : ''}`}
+              >
+                <span>
+                  {t.explore.mapSatelliteLayer}
+                  <span className="mt-0.5 block text-[10px] text-muted-foreground">{t.explore.mapSatelliteSource}</span>
+                </span>
+                {layerMode === 'satellite' && <span aria-hidden="true">✓</span>}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const MAP_LANGUAGE_FIELDS: Record<Lang, string> = {
@@ -350,6 +409,24 @@ function ensureLayers(map: MlMap, accent: string) {
   // them neutral and quiet so overlapping scenes do not overpower the map.
   const footprintColor = accent === ACCENT_DARK ? '#a3a3a3' : '#737373';
   const empty = { type: 'FeatureCollection', features: [] } as GeoJSON.FeatureCollection;
+  if (!map.getSource('nasa-viirs')) {
+    map.addSource('nasa-viirs', {
+      type: 'raster',
+      tiles: [NASA_VIIRS_TILES],
+      tileSize: 256,
+      maxzoom: 9,
+      attribution: 'NASA GIBS / EOSDIS',
+    });
+  }
+  if (!map.getLayer('nasa-viirs-layer')) {
+    map.addLayer({
+      id: 'nasa-viirs-layer',
+      type: 'raster',
+      source: 'nasa-viirs',
+      layout: { visibility: 'none' },
+      paint: { 'raster-opacity': 0.78, 'raster-fade-duration': 0 },
+    });
+  }
   if (!map.getSource('footprints')) map.addSource('footprints', { type: 'geojson', data: empty });
   if (!map.getSource('aoi')) map.addSource('aoi', { type: 'geojson', data: empty });
   if (!map.getSource('draft')) map.addSource('draft', { type: 'geojson', data: empty });
@@ -409,4 +486,9 @@ function ensureLayers(map: MlMap, accent: string) {
       paint: { 'line-color': accent, 'line-width': 1.5, 'line-dasharray': [1, 1] },
     });
   }
+}
+
+function syncLayerVisibility(map: MlMap, mode: 'base' | 'satellite') {
+  if (!map.getLayer('nasa-viirs-layer')) return;
+  map.setLayoutProperty('nasa-viirs-layer', 'visibility', mode === 'satellite' ? 'visible' : 'none');
 }
