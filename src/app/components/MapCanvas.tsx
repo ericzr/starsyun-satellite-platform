@@ -102,6 +102,8 @@ export function MapCanvas({
   // keep latest props for event handlers
   const propsRef = useRef({ drawing, onDraw, onFootprintClick, onFootprintHover });
   propsRef.current = { drawing, onDraw, onFootprintClick, onFootprintHover };
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
 
   const accent = theme === 'light' ? ACCENT_LIGHT : ACCENT_DARK;
   const accentRef = useRef(accent);
@@ -139,6 +141,10 @@ export function MapCanvas({
         ensureLayers(map!, accentRef.current);
         applyMapLanguage(map!, languageRef.current);
         pushData(map!);
+        const initialFocus = focusRef.current;
+        if (initialFocus) {
+          map!.flyTo({ center: initialFocus.center, zoom: initialFocus.zoom, speed: 1.4, essential: true });
+        }
       });
       map.on('styledata', () => {
         if (readyRef.current) {

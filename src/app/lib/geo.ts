@@ -132,12 +132,30 @@ export function fmtArea(km2: number): string {
   return km2.toFixed(2);
 }
 
-/** Parse "lat, lon" coordinate string. Returns [lon, lat] or null. */
+/** Parse latitude/longitude text in either "lat, lon" or "lon, lat" order. */
 export function parseCoords(input: string): [number, number] | null {
-  const m = input.trim().match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
-  if (!m) return null;
-  const lat = parseFloat(m[1]);
-  const lon = parseFloat(m[2]);
-  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
-  return [lon, lat];
+  const normalized = input.trim().replace(/[，、]/g, ',').replace(/[º°]/g, '').replace(/\s+/g, ' ');
+  const match = normalized.match(/^([NSWE])?\s*([-+]?\d+(?:\.\d+)?)\s*([NSWE])?\s*[,; ]\s*([NSWE])?\s*([-+]?\d+(?:\.\d+)?)\s*([NSWE])?$/i);
+  if (!match) return null;
+  const first = Number(match[2]);
+  const second = Number(match[5]);
+  const firstHemisphere = match[1]?.toUpperCase() || match[3]?.toUpperCase();
+  const secondHemisphere = match[4]?.toUpperCase() || match[6]?.toUpperCase();
+  const signed = (value: number, hemisphere?: string) => /[SW]/.test(hemisphere || '') ? -Math.abs(value) : value;
+  const values = [signed(first, firstHemisphere), signed(second, secondHemisphere)];
+  if (values.length !== 2 || values.some((value) => !Number.isFinite(value))) return null;
+  const [a, b] = values;
+  if (firstHemisphere && secondHemisphere) {
+    const latFirst = /[NS]/.test(firstHemisphere) && /[EW]/.test(secondHemisphere);
+    const lonFirst = /[EW]/.test(firstHemisphere) && /[NS]/.test(secondHemisphere);
+    if (latFirst) return Math.abs(a) <= 90 && Math.abs(b) <= 180 ? [b, a] : null;
+    if (lonFirst) return Math.abs(b) <= 90 && Math.abs(a) <= 180 ? [a, b] : null;
+  }
+  if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
+    // The UI documents latitude first, so keep that as the default for the
+    // ambiguous case where both values fall inside +/-90 degrees.
+    return [b, a];
+  }
+  if (Math.abs(a) <= 180 && Math.abs(b) <= 90) return [a, b];
+  return null;
 }

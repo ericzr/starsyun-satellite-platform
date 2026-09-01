@@ -60,7 +60,7 @@ export async function fetchGlobalCountries(): Promise<GlobalCountry[]> {
 }
 
 /** Resolves second-level places for a selected state using OpenStreetMap's public geocoder. */
-export async function fetchGlobalCities(country: string, state: string): Promise<GlobalCity[]> {
+export async function fetchGlobalCities(country: string, state: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity[]> {
   const query = new URLSearchParams({
     format: 'jsonv2',
     addressdetails: '1',
@@ -68,18 +68,30 @@ export async function fetchGlobalCities(country: string, state: string): Promise
     country,
     state,
     featuretype: 'city',
+    namedetails: '1',
+    'accept-language': lang === 'zh' ? 'zh-CN,en' : 'en',
   });
   const response = await fetchWithTimeout(`${NOMINATIM_URL}?${query.toString()}`, {
     headers: { Accept: 'application/json' },
   });
   if (!response.ok) throw new Error(`City directory unavailable (${response.status})`);
-  const payload = await response.json() as Array<{ place_id: number; display_name: string; name?: string; lat: string; lon: string; boundingbox?: string[] }>;
+  const payload = await response.json() as Array<{
+    place_id: number;
+    display_name: string;
+    name?: string;
+    namedetails?: Record<string, string>;
+    lat: string;
+    lon: string;
+    boundingbox?: string[];
+  }>;
   return payload
     .map((place) => {
       const box = place.boundingbox?.map(Number);
       return {
         id: String(place.place_id),
-        name: place.name || place.display_name.split(',')[0],
+        name: lang === 'zh'
+          ? place.namedetails?.['name:zh'] || place.namedetails?.['name:zh-Hans'] || place.name || place.display_name.split(',')[0]
+          : place.name || place.display_name.split(',')[0],
         displayName: place.display_name,
         lat: Number(place.lat),
         lon: Number(place.lon),
