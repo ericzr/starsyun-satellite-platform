@@ -103,9 +103,9 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     const disposables: THREE.Texture[] = [tex];
     let disposed = false;
     let nightMaterial: THREE.ShaderMaterial | undefined;
-    let cloudMaterial: THREE.ShaderMaterial | undefined;
+    const cloudMaterials: THREE.ShaderMaterial[] = [];
     let cloudGeometry: THREE.SphereGeometry | undefined;
-    let cloudMesh: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial> | undefined;
+    const cloudMeshes: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>[] = [];
 
     // NASA Blue Marble + elevation + Black Marble are bundled as 2K WebP assets. This removes
     // two cross-origin CDN waits and the previous 2M-pixel main-thread canvas conversion.
@@ -162,13 +162,22 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     cloudsTexture.wrapT = THREE.ClampToEdgeWrapping;
     cloudsTexture.minFilter = THREE.LinearMipmapLinearFilter;
     cloudsTexture.anisotropy = maxAniso;
-    cloudMaterial = createCloudMaterial(cloudsTexture, isLight);
-    // Only a few thousandths above the terrain: enough to avoid z-fighting,
-    // close enough that clouds and night lights remain visually attached.
-    cloudGeometry = new THREE.SphereGeometry(1.6075, 96, 64);
-    cloudMesh = new THREE.Mesh(cloudGeometry, cloudMaterial);
-    cloudMesh.renderOrder = 3;
-    globe.add(cloudMesh);
+    // Two nearby layers create parallax between cloud systems while remaining
+    // visually attached to the terrain. Their small radius difference is enough
+    // to prevent z-fighting without producing a floating shell.
+    cloudGeometry = new THREE.SphereGeometry(1, 96, 64);
+    [
+      { radius: 1.6065, opacity: isLight ? 0.11 : 0.1, scale: 1, speed: 1 },
+      { radius: 1.609, opacity: isLight ? 0.065 : 0.06, scale: 1.45, speed: -0.62 },
+    ].forEach((layer) => {
+      const material = createCloudMaterial(cloudsTexture, isLight, layer);
+      const mesh = new THREE.Mesh(cloudGeometry!, material);
+      mesh.scale.setScalar(layer.radius);
+      mesh.renderOrder = 3;
+      globe.add(mesh);
+      cloudMaterials.push(material);
+      cloudMeshes.push(mesh);
+    });
     disposables.push(cloudsTexture);
 
     // Thin latitude/longitude wireframe for a techy feel - reduced segments from 24,16 to 16,12
@@ -430,8 +439,11 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
         s.mesh.quaternion.copy(localQuaternion);
       });
       stars.rotation.y += dt * 0.01;
-      if (cloudMaterial) cloudMaterial.uniforms.time.value += dt;
-      if (cloudMesh) cloudMesh.rotation.y += dt * 0.0018;
+      cloudMaterials.forEach((material) => {
+        material.uniforms.time.value += dt;
+      });
+      cloudMeshes[0].rotation.y += dt * 0.0022;
+      cloudMeshes[1].rotation.y -= dt * 0.00135;
 
       renderer.render(scene, camera);
     };
@@ -485,7 +497,7 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       window.removeEventListener('pointerup', onUp);
       renderer.dispose();
       nightMaterial?.dispose();
-      cloudMaterial?.dispose();
+      cloudMaterials.forEach((material) => material.dispose());
       cloudGeometry?.dispose();
       atmosphereGlow.geometry.dispose();
       atmosphereGlowMaterial.dispose();
@@ -576,12 +588,18 @@ function createNightLightsMaterial(nightMap: THREE.Texture, sunDirectionView: TH
   });
 }
 
-function createCloudMaterial(cloudMap: THREE.Texture, isLight: boolean) {
+function createCloudMaterial(
+  cloudMap: THREE.Texture,
+  isLight: boolean,
+  layer: { opacity: number; scale: number; speed: number },
+) {
   return new THREE.ShaderMaterial({
     uniforms: {
       cloudMap: { value: cloudMap },
       cloudColor: { value: new THREE.Color(isLight ? 0xe9e9e9 : 0xf3f3f3) },
-      opacity: { value: isLight ? 0.14 : 0.12 },
+      opacity: { value: layer.opacity },
+      mapScale: { value: layer.scale },
+      driftSpeed: { value: layer.speed },
       time: { value: 0 },
     },
     vertexShader: `
@@ -600,24 +618,41 @@ function createCloudMaterial(cloudMap: THREE.Texture, isLight: boolean) {
       uniform sampler2D cloudMap;
       uniform vec3 cloudColor;
       uniform float opacity;
+      uniform float mapScale;
+      uniform float driftSpeed;
       uniform float time;
       varying vec2 vUv;
       varying vec3 vNormal;
       varying vec3 vViewDirection;
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+          mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
+          f.y
+        );
+      }
       void main() {
-        // Two low-speed offsets create a soft parallax drift while preserving the
-        // recognizable global cloud structures in the source texture.
-        vec2 driftA = vec2(time * 0.006, time * 0.00075);
-        vec2 driftB = vec2(-time * 0.0022, time * 0.00042);
-        vec2 uvA = vec2(fract(vUv.x + driftA.x), clamp(vUv.y + driftA.y, 0.004, 0.996));
-        vec2 uvB = vec2(fract(vUv.x * 1.015 + driftB.x), clamp(vUv.y * 1.015 + driftB.y, 0.004, 0.996));
+        // Curl the flow slightly by latitude. This breaks the rigid global-slide
+        // look while keeping the movement subtle enough to read as atmospheric.
+        float curl = sin(vUv.y * 18.0 + time * 0.18 * driftSpeed) * 0.008;
+        vec2 driftA = vec2(time * 0.012 * driftSpeed, time * 0.0012 * driftSpeed);
+        vec2 driftB = vec2(-time * 0.006 * driftSpeed, time * 0.0007 * driftSpeed);
+        vec2 uvA = vec2(fract(vUv.x * mapScale + driftA.x + curl), clamp(vUv.y * mapScale + driftA.y, 0.004, 0.996));
+        vec2 uvB = vec2(fract(vUv.x * mapScale * 1.19 + driftB.x - curl * 0.7), clamp(vUv.y * mapScale * 1.19 + driftB.y, 0.004, 0.996));
         vec4 sampleA = texture2D(cloudMap, uvA);
         vec4 sampleB = texture2D(cloudMap, uvB);
-        // The source is an alpha cloud mask. Combining alpha with luminance keeps
-        // transparent ocean pixels from becoming a gray film over the continents.
+        // The source is an alpha cloud mask. A moving low-frequency breakup field
+        // makes each cloud mass evolve instead of moving as one rigid decal.
         float maskA = sampleA.a * smoothstep(0.18, 0.92, sampleA.r);
         float maskB = sampleB.a * smoothstep(0.18, 0.92, sampleB.r);
-        float cloudSignal = smoothstep(0.28, 0.72, maskA * 0.78 + maskB * 0.22);
+        float breakup = mix(0.82, 1.16, noise(vUv * (5.0 + mapScale * 2.0) + vec2(time * 0.05 * driftSpeed, -time * 0.025 * driftSpeed)));
+        float cloudSignal = smoothstep(0.32, 0.76, (maskA * 0.78 + maskB * 0.22) * breakup);
         float facing = max(dot(normalize(vNormal), normalize(vViewDirection)), 0.0);
         float rimFade = smoothstep(0.02, 0.32, facing);
         float highlight = 0.78 + 0.22 * facing;
