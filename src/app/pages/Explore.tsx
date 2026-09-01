@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '../components/ui/
 import { useInquiryDraft } from '../context/InquiryContext';
 import { useCart } from '../context/CartContext';
 import { searchEarthSearch } from '../services/stac';
-import { fetchGlobalCities, fetchGlobalCountries, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
+import { fetchGlobalCities, fetchGlobalCountries, geocodeGlobalCity, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
 import { toast } from 'sonner';
 
 const LOCAL_COUNTRY_ISO: Record<string, string> = {
@@ -33,6 +33,13 @@ const LOCAL_STATE_LABELS: Record<string, Record<string, string>> = {
     'Taiwan Province, People\'s Republic of China': '台湾省', 'Tibet Autonomous Region': '西藏自治区',
     Xinjiang: '新疆维吾尔自治区', Yunnan: '云南省', Zhejiang: '浙江省',
   },
+};
+
+const LOCAL_CITY_LABELS: Record<string, string> = {
+  Baotou: '包头市', 'Bayan Nur': '巴彦淖尔市', 'Bayannur Shi': '巴彦淖尔市', Beichengqu: '北城区', Chifeng: '赤峰市',
+  Dongsheng: '东胜区', Erenhot: '二连浩特市', 'E’erguna': '额尔古纳市', Genhe: '根河市', Hailar: '海拉尔区', Hohhot: '呼和浩特市',
+  Hulunbuir: '呼伦贝尔市', 'Hulunbuir Region': '呼伦贝尔市', Manzhouli: '满洲里市', Ordos: '鄂尔多斯市', 'Ordos Shi': '鄂尔多斯市',
+  Tongliao: '通辽市', Ulanhot: '乌兰浩特市', Wuhai: '乌海市', 'Xilin Gol Meng': '锡林郭勒盟', 'Xilin Hot': '锡林浩特市', Yakeshi: '牙克石市', Zhalantun: '扎兰屯市',
 };
 
 function countryLabel(country: GlobalCountry, lang: string) {
@@ -59,6 +66,7 @@ function stateLabel(state: GlobalState, countryIso: string, lang: string) {
 
 function cityLabel(city: GlobalCity, localCountry: (typeof ADMINISTRATIVE_AREAS)[number] | undefined, level1: string, lang: string) {
   if (lang !== 'zh') return city.name;
+  if (LOCAL_CITY_LABELS[city.name]) return LOCAL_CITY_LABELS[city.name];
   const localState = localCountry?.subdivisions.find((area) =>
     area.id === level1 || area.name === level1 || area.nameEn === level1,
   );
@@ -209,14 +217,30 @@ export function Explore() {
     setAdminLevel2('');
   }
 
-  function selectGlobalCity(city: GlobalCity) {
+  async function selectGlobalCity(city: GlobalCity) {
     focusKey.current += 1;
-    setSearch(city.name);
     setAoi(null);
     const region = REGIONS.find((item) => item.aliases.some((alias) => alias.toLowerCase() === city.name.toLowerCase()));
     setRegionId(region?.id ?? null);
-    setFocus({ center: [city.lon, city.lat], zoom: 11, key: focusKey.current });
-    setRemoteBbox(city.bbox ?? pointSearchBbox([city.lon, city.lat]));
+    const country = globalCountries.find((item) => item.iso2 === adminCountry);
+    const localCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === adminCountry);
+    const selectedState = adminLevel1;
+    const displayName = cityLabel(city, localCountry, selectedState, lang);
+    setSearch(displayName);
+    if (region) {
+      setFocus({ center: region.center, zoom: region.zoom, key: focusKey.current });
+      setRemoteBbox(regionSearchBbox(region));
+      return;
+    }
+    const resolved = city.lat && city.lon
+      ? city
+      : country ? await geocodeGlobalCity(country.name, selectedState, city.name).catch(() => null) : null;
+    if (!resolved || !Number.isFinite(resolved.lat) || !Number.isFinite(resolved.lon)) {
+      toast.error(lang === 'zh' ? '该城市暂时无法定位，请输入坐标或直接在地图绘制区域' : 'This city could not be located. Enter coordinates or draw an area.');
+      return;
+    }
+    setFocus({ center: [resolved.lon, resolved.lat], zoom: 11, key: focusKey.current });
+    setRemoteBbox(resolved.bbox ?? pointSearchBbox([resolved.lon, resolved.lat]));
   }
 
   function selectRegion(region: (typeof REGIONS)[number]) {
@@ -364,7 +388,7 @@ export function Explore() {
                 onChange={(event) => {
                   setAdminLevel2(event.target.value);
                   const city = globalCities.find((item) => item.id === event.target.value);
-                  if (city) selectGlobalCity(city);
+                  if (city) void selectGlobalCity(city);
                   else {
                     const locality = localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.find((item) => item.id === event.target.value);
                     const region = locality && REGIONS.find((item) => item.id === locality.regionId);

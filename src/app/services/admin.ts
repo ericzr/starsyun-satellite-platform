@@ -20,6 +20,7 @@ export interface GlobalCity {
 }
 
 const COUNTRIES_URL = 'https://countriesnow.space/api/v0.1/countries/states';
+const CITIES_URL = 'https://countriesnow.space/api/v0.1/countries/state/cities/q';
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const COUNTRIES_CACHE_KEY = 'starsyun-admin-countries-v1';
 
@@ -61,6 +62,16 @@ export async function fetchGlobalCountries(): Promise<GlobalCountry[]> {
 
 /** Resolves second-level places for a selected state using OpenStreetMap's public geocoder. */
 export async function fetchGlobalCities(country: string, state: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity[]> {
+  try {
+    const query = new URLSearchParams({ country, state });
+    const response = await fetchWithTimeout(`${CITIES_URL}?${query.toString()}`, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`City directory unavailable (${response.status})`);
+    const payload = await response.json() as { error: boolean; data?: string[] };
+    if (payload.error || !payload.data?.length) throw new Error('City directory returned no cities');
+    return payload.data.map((name) => ({ id: `${country}:${state}:${name}`, name, displayName: name, lat: 0, lon: 0 }));
+  } catch {
+    // Fall through to Nominatim for countries/states not covered by CountriesNow.
+  }
   const query = new URLSearchParams({
     format: 'jsonv2',
     addressdetails: '1',
@@ -99,4 +110,32 @@ export async function fetchGlobalCities(country: string, state: string, lang: 'z
       };
     })
     .filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lon));
+}
+
+/** Resolve a city from the directory only when the user selects it. */
+export async function geocodeGlobalCity(country: string, state: string, city: string): Promise<GlobalCity | null> {
+  const query = new URLSearchParams({
+    format: 'jsonv2',
+    addressdetails: '1',
+    limit: '1',
+    country,
+    state,
+    city,
+  });
+  const response = await fetchWithTimeout(`${NOMINATIM_URL}?${query.toString()}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) return null;
+  const payload = await response.json() as Array<{ place_id: number; display_name: string; name?: string; lat: string; lon: string; boundingbox?: string[] }>;
+  const place = payload[0];
+  if (!place) return null;
+  const box = place.boundingbox?.map(Number);
+  return {
+    id: String(place.place_id),
+    name: city,
+    displayName: place.display_name,
+    lat: Number(place.lat),
+    lon: Number(place.lon),
+    bbox: box && box.length === 4 ? [box[2], box[0], box[3], box[1]] as [number, number, number, number] : undefined,
+  };
 }

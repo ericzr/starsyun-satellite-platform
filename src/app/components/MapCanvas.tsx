@@ -332,7 +332,11 @@ export function MapCanvas({
 
   return (
     <div className={`relative ${className ?? ''}`}>
-      <div ref={containerRef} className="absolute inset-0" />
+      <div
+        ref={containerRef}
+        className="absolute inset-0 size-full"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+      />
       <div className="pointer-events-none absolute bottom-3 right-16 z-10">
         <div className="pointer-events-auto relative">
           <button
@@ -363,7 +367,6 @@ export function MapCanvas({
               >
                 <span>
                   {t.explore.mapSatelliteLayer}
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground">{t.explore.mapSatelliteSource}</span>
                 </span>
                 {layerMode === 'satellite' && <span aria-hidden="true">✓</span>}
               </button>
