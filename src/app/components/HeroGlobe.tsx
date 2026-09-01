@@ -141,7 +141,9 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
         const sunDirectionView = key.position.clone().normalize().transformDirection(camera.matrixWorldInverse);
         nightMaterial = createNightLightsMaterial(night, sunDirectionView);
         const nightLights = new THREE.Mesh(sphere.geometry, nightMaterial);
-        nightLights.scale.setScalar(1.0015);
+        // Keep the emissive layer coplanar with the terrain so city lights do not
+        // read as a separate floating shell at the limb.
+        nightLights.scale.setScalar(1.00025);
         nightLights.renderOrder = 2;
         globe.add(nightLights);
         disposables.push(night);
@@ -161,7 +163,9 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     cloudsTexture.minFilter = THREE.LinearMipmapLinearFilter;
     cloudsTexture.anisotropy = maxAniso;
     cloudMaterial = createCloudMaterial(cloudsTexture, isLight);
-    cloudGeometry = new THREE.SphereGeometry(1.628, 80, 80);
+    // Only a few thousandths above the terrain: enough to avoid z-fighting,
+    // close enough that clouds and night lights remain visually attached.
+    cloudGeometry = new THREE.SphereGeometry(1.6075, 96, 64);
     cloudMesh = new THREE.Mesh(cloudGeometry, cloudMaterial);
     cloudMesh.renderOrder = 3;
     globe.add(cloudMesh);
@@ -427,7 +431,7 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       });
       stars.rotation.y += dt * 0.01;
       if (cloudMaterial) cloudMaterial.uniforms.time.value += dt;
-      if (cloudMesh) cloudMesh.rotation.y += dt * 0.0025;
+      if (cloudMesh) cloudMesh.rotation.y += dt * 0.0018;
 
       renderer.render(scene, camera);
     };
@@ -576,8 +580,8 @@ function createCloudMaterial(cloudMap: THREE.Texture, isLight: boolean) {
   return new THREE.ShaderMaterial({
     uniforms: {
       cloudMap: { value: cloudMap },
-      cloudColor: { value: new THREE.Color(isLight ? 0xd6d6d6 : 0xf0f0f0) },
-      opacity: { value: isLight ? 0.24 : 0.2 },
+      cloudColor: { value: new THREE.Color(isLight ? 0xe9e9e9 : 0xf3f3f3) },
+      opacity: { value: isLight ? 0.14 : 0.12 },
       time: { value: 0 },
     },
     vertexShader: `
@@ -605,9 +609,15 @@ function createCloudMaterial(cloudMap: THREE.Texture, isLight: boolean) {
         // recognizable global cloud structures in the source texture.
         vec2 driftA = vec2(time * 0.006, time * 0.00075);
         vec2 driftB = vec2(-time * 0.0022, time * 0.00042);
-        float cloudA = texture2D(cloudMap, fract(vUv + driftA)).r;
-        float cloudB = texture2D(cloudMap, fract(vUv * 1.015 + driftB)).r;
-        float cloudSignal = smoothstep(0.24, 0.68, cloudA * 0.72 + cloudB * 0.28);
+        vec2 uvA = vec2(fract(vUv.x + driftA.x), clamp(vUv.y + driftA.y, 0.004, 0.996));
+        vec2 uvB = vec2(fract(vUv.x * 1.015 + driftB.x), clamp(vUv.y * 1.015 + driftB.y, 0.004, 0.996));
+        vec4 sampleA = texture2D(cloudMap, uvA);
+        vec4 sampleB = texture2D(cloudMap, uvB);
+        // The source is an alpha cloud mask. Combining alpha with luminance keeps
+        // transparent ocean pixels from becoming a gray film over the continents.
+        float maskA = sampleA.a * smoothstep(0.18, 0.92, sampleA.r);
+        float maskB = sampleB.a * smoothstep(0.18, 0.92, sampleB.r);
+        float cloudSignal = smoothstep(0.28, 0.72, maskA * 0.78 + maskB * 0.22);
         float facing = max(dot(normalize(vNormal), normalize(vViewDirection)), 0.0);
         float rimFade = smoothstep(0.02, 0.32, facing);
         float highlight = 0.78 + 0.22 * facing;
