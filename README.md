@@ -152,6 +152,8 @@ vercel
 
 正式环境建议在 Vercel 配置 `VITE_STAC_GATEWAY_URL=/api/stac`，让真实数据检索经过服务端网关。详见 [Provider Gateway 文档](docs/PROVIDER_GATEWAY.md)。
 
+服务器迁移、环境变量分层、数据库、支付和上线门禁请参阅 [正式部署准备清单](docs/DEPLOYMENT_READINESS.md)。
+
 ### Docker
 
 ```dockerfile

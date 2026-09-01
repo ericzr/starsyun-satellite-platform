@@ -23,7 +23,7 @@ export interface GlobalCity {
 const COUNTRIES_URL = 'https://countriesnow.space/api/v0.1/countries/states';
 const CITIES_URL = 'https://countriesnow.space/api/v0.1/countries/state/cities/q';
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
-const COUNTRIES_CACHE_KEY = 'starsyun-admin-countries-v1';
+const COUNTRIES_CACHE_KEY = 'starsyun-admin-countries-v2';
 
 function normalizePlaceName(value: string) {
   return value
@@ -76,7 +76,7 @@ export async function fetchGlobalCountries(): Promise<GlobalCountry[]> {
   if (!response.ok) throw new Error(`Administrative directory unavailable (${response.status})`);
   const payload = await response.json() as { error: boolean; data?: Array<{ name: string; iso2: string; iso3: string; states?: GlobalState[] }> };
   if (payload.error || !payload.data) throw new Error('Administrative directory returned an error');
-  const countries = payload.data.map((country) => ({
+  const countries = payload.data.filter((country) => country.iso2 !== 'TW' && country.name.toLowerCase() !== 'taiwan').map((country) => ({
     name: country.name,
     iso2: country.iso2,
     iso3: country.iso3,
