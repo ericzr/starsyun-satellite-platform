@@ -43,6 +43,11 @@ jobs:
         env:
           GITHUB_ACTIONS: true
 
+      # GitHub Pages serves unknown SPA routes through 404.html. Keep the
+      # client-side router reachable when users open /explore directly.
+      - name: Preserve SPA routes
+        run: cp ./dist/index.html ./dist/404.html
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
