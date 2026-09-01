@@ -431,7 +431,7 @@ export function Explore() {
                 {(globalCountries.length ? globalCountries : ADMINISTRATIVE_AREAS.map((country) => ({ iso2: LOCAL_COUNTRY_ISO[country.id] ?? country.id, name: lang === 'zh' ? country.name : country.nameEn, states: country.subdivisions.map((area) => ({ name: area.name })), iso3: country.id }))).map((country) => <option key={country.iso2} value={country.iso2}>{countryLabel(country, lang)}</option>)}
               </select>
             </label>
-            <label className="block space-y-1">
+            {adminCountry && <label className="block space-y-1">
               <span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel1}</span>
               <select
                 value={adminLevel1}
@@ -444,8 +444,8 @@ export function Explore() {
                 <option value="">{t.explore.adminLevel1Placeholder}</option>
                 {(globalCountries.find((country) => country.iso2 === adminCountry)?.states ?? localCountry?.subdivisions.map((area) => ({ name: area.name, id: area.id })) ?? []).map((area) => <option key={'id' in area ? area.id : area.name} value={area.name}>{stateLabel(area, adminCountry, lang)}</option>)}
               </select>
-            </label>
-            <label className="block space-y-1">
+            </label>}
+            {adminCountry && adminLevel1 && <label className="block space-y-1">
               <span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel2}</span>
               <select
                 value={adminLevel2}
@@ -468,8 +468,8 @@ export function Explore() {
                 {globalCities.map((city) => <option key={city.id} value={city.id}>{cityLabel(city, localCountry, adminLevel1, lang)}</option>)}
                 {!globalCities.length && localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.filter((area) => isSecondLevelLocality(area.name)).map((area) => <option key={area.id} value={area.id}>{lang === 'zh' ? area.name : area.nameEn}</option>)}
               </select>
-            </label>
-            <label className="block space-y-1">
+            </label>}
+            {adminCountry && adminLevel1 && adminLevel2 && <label className="block space-y-1">
               <span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel3}</span>
               <select
                 value={adminLevel3}
@@ -484,7 +484,7 @@ export function Explore() {
                 <option value="">{globalDistricts.length ? t.explore.adminLevel3Placeholder : (lang === 'zh' ? '暂无三级行政区数据' : 'No third-level areas')}</option>
                 {globalDistricts.map((district) => <option key={district.id} value={district.id}>{cityLabel(district, localCountry, adminLevel1, lang)}</option>)}
               </select>
-            </label>
+            </label>}
           </div>
         )}
         {selectionMode === 'vector' && areaSelectorOpen && (
