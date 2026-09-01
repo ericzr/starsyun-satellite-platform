@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List, Upload, MapPinned } from 'lucide-react';
+import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List, Upload, MapPinned, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useI18n } from '../i18n';
 import { ADMINISTRATIVE_AREAS, PRODUCTS, REGIONS, type Product } from '../data/products';
@@ -125,6 +125,7 @@ export function Explore() {
 
   const [search, setSearch] = useState('');
   const [selectionMode, setSelectionMode] = useState<'admin' | 'vector'>('admin');
+  const [areaSelectorOpen, setAreaSelectorOpen] = useState(false);
   const [adminCountry, setAdminCountry] = useState('');
   const [adminLevel1, setAdminLevel1] = useState('');
   const [adminLevel2, setAdminLevel2] = useState('');
@@ -391,15 +392,20 @@ export function Explore() {
               key={mode}
               type="button"
               className={`flex min-w-0 flex-col items-center gap-1 rounded px-1 py-2 text-[10px] transition-colors ${selectionMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-              onClick={() => setSelectionMode(mode)}
+              onClick={() => {
+                if (selectionMode === mode) setAreaSelectorOpen((open) => !open);
+                else { setSelectionMode(mode); setAreaSelectorOpen(true); }
+              }}
               title={label}
+              aria-expanded={selectionMode === mode ? areaSelectorOpen : undefined}
             >
               <Icon className="size-3.5" />
               <span className="truncate">{label}</span>
+              {selectionMode === mode && <ChevronDown className={`size-3 transition-transform ${areaSelectorOpen ? 'rotate-180' : ''}`} />}
             </button>
           ))}
         </div>
-        {selectionMode === 'admin' && (
+        {selectionMode === 'admin' && areaSelectorOpen && (
           <div className="space-y-2">
             <label className="block space-y-1">
               <span className="tech-label text-[9px] text-muted-foreground">{t.explore.country}</span>
@@ -481,7 +487,7 @@ export function Explore() {
             </label>
           </div>
         )}
-        {selectionMode === 'vector' && (
+        {selectionMode === 'vector' && areaSelectorOpen && (
           <div>
             <input ref={fileInputRef} type="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" className="hidden" onChange={(event) => handleVectorFile(event.target.files?.[0])} />
             <Button type="button" variant="outline" size="sm" className="h-8 w-full text-xs" onClick={() => fileInputRef.current?.click()}><Upload className="size-3.5" />{vectorName || t.explore.uploadVectorHint}</Button>
