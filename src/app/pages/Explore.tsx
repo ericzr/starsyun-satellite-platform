@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List, Upload, MapPinned, LocateFixed, PencilLine } from 'lucide-react';
+import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List, Upload, MapPinned } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useI18n } from '../i18n';
-import { PRODUCTS, REGIONS, type Product } from '../data/products';
+import { ADMINISTRATIVE_AREAS, PRODUCTS, REGIONS, type Product } from '../data/products';
 import { coverageRatio, intersects, bboxAreaKm2, fmtArea, parseCoords, parseVectorFile, type BBox } from '../lib/geo';
 import { MapCanvas, type Footprint } from '../components/MapCanvas';
 import { FilterPanel, DEFAULT_FILTERS, type Filters } from '../components/FilterPanel';
@@ -15,7 +15,21 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '../components/ui/
 import { useInquiryDraft } from '../context/InquiryContext';
 import { useCart } from '../context/CartContext';
 import { searchEarthSearch } from '../services/stac';
+import { fetchGlobalCities, fetchGlobalCountries, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
 import { toast } from 'sonner';
+
+const LOCAL_COUNTRY_ISO: Record<string, string> = {
+  china: 'CN', uae: 'AE', 'saudi-arabia': 'SA', singapore: 'SG', indonesia: 'ID', kenya: 'KE', brazil: 'BR',
+};
+
+function countryLabel(country: GlobalCountry, lang: string) {
+  if (lang !== 'zh') return country.name;
+  try {
+    return new Intl.DisplayNames(['zh-CN'], { type: 'region' }).of(country.iso2) ?? country.name;
+  } catch {
+    return country.name;
+  }
+}
 
 function matchRegion(q: string) {
   const s = q.trim().toLowerCase();
@@ -59,9 +73,15 @@ export function Explore() {
   const [params] = useSearchParams();
 
   const [search, setSearch] = useState('');
-  const [selectionMode, setSelectionMode] = useState<'coordinate' | 'admin' | 'vector' | 'draw'>('coordinate');
-  const [coordinateInput, setCoordinateInput] = useState('');
-  const [adminSelection, setAdminSelection] = useState('');
+  const [selectionMode, setSelectionMode] = useState<'admin' | 'vector'>('admin');
+  const [adminCountry, setAdminCountry] = useState('');
+  const [adminLevel1, setAdminLevel1] = useState('');
+  const [adminLevel2, setAdminLevel2] = useState('');
+  const [globalCountries, setGlobalCountries] = useState<GlobalCountry[]>([]);
+  const [globalStates, setGlobalStates] = useState<GlobalState[]>([]);
+  const [globalCities, setGlobalCities] = useState<GlobalCity[]>([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const cityRequestRef = useRef(0);
   const [vectorName, setVectorName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [regionId, setRegionId] = useState<string | null>(null);
@@ -79,6 +99,18 @@ export function Explore() {
   const [remoteProducts, setRemoteProducts] = useState<Product[] | null>(null);
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [remoteError, setRemoteError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchGlobalCountries()
+      .then((countries) => {
+        if (!cancelled) setGlobalCountries(countries);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Handle ?q= from home
   useEffect(() => {
@@ -98,39 +130,72 @@ export function Explore() {
       focusKey.current += 1;
       setFocus({ center: coords, zoom: 12, key: focusKey.current });
       setRegionId(null);
+      setAdminCountry('');
+      setAdminLevel1('');
+      setAdminLevel2('');
       setRemoteBbox(pointSearchBbox(coords));
       return;
     }
     const region = matchRegion(q);
     if (region) {
-      focusKey.current += 1;
-      setFocus({ center: region.center, zoom: region.zoom, key: focusKey.current });
-      setRegionId(region.id);
-      setRemoteBbox(regionSearchBbox(region));
+      selectRegion(region);
     } else {
       toast.error(lang === 'zh' ? '未找到该地点，试试迪拜 / 上海 / 深圳' : 'Place not found. Try Dubai / Shanghai.');
     }
   }
 
+  function syncAdminSelection(regionId: string) {
+    for (const country of ADMINISTRATIVE_AREAS) {
+      for (const subdivision of country.subdivisions) {
+        const locality = subdivision.localities.find((item) => item.regionId === regionId);
+        if (locality) {
+          const countryIso = LOCAL_COUNTRY_ISO[country.id] ?? country.id;
+          const globalCountry = globalCountries.find((item) => item.iso2 === countryIso);
+          const globalSubdivision = globalCountry?.states.find((item) =>
+            item.name.toLowerCase() === subdivision.nameEn.toLowerCase() ||
+            item.name.toLowerCase().includes(subdivision.nameEn.toLowerCase()),
+          );
+          if (globalCountry) setGlobalStates(globalCountry.states);
+          setAdminCountry(countryIso);
+          setAdminLevel1(globalSubdivision?.name ?? subdivision.id);
+          setAdminLevel2(locality.id);
+          return;
+        }
+      }
+    }
+    setAdminCountry('');
+    setAdminLevel1('');
+    setAdminLevel2('');
+  }
+
+  function selectGlobalCity(city: GlobalCity) {
+    focusKey.current += 1;
+    setSearch(city.name);
+    setAoi(null);
+    const region = REGIONS.find((item) => item.aliases.some((alias) => alias.toLowerCase() === city.name.toLowerCase()));
+    setRegionId(region?.id ?? null);
+    setFocus({ center: [city.lon, city.lat], zoom: 11, key: focusKey.current });
+    setRemoteBbox(city.bbox ?? pointSearchBbox([city.lon, city.lat]));
+  }
+
   function selectRegion(region: (typeof REGIONS)[number]) {
     focusKey.current += 1;
     setSearch(lang === 'zh' ? region.name : region.nameEn);
-    setAdminSelection(region.id);
+    syncAdminSelection(region.id);
     setRegionId(region.id);
     setAoi(null);
     setFocus({ center: region.center, zoom: region.zoom, key: focusKey.current });
     setRemoteBbox(regionSearchBbox(region));
   }
 
-  function submitCoordinates() {
-    const coords = parseCoords(coordinateInput);
-    if (!coords) {
-      toast.error(lang === 'zh' ? '请输入“纬度, 经度”，例如 31.2304, 121.4737' : 'Enter “latitude, longitude”, e.g. 31.2304, 121.4737');
-      return;
+  useEffect(() => {
+    if (globalCountries.length && regionId) {
+      const region = REGIONS.find((item) => item.id === regionId);
+      if (region) syncAdminSelection(region.id);
     }
-    setSearch(coordinateInput);
-    runSearch(coordinateInput);
-  }
+    // Sync URL-selected local hotspots once the global directory arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalCountries, regionId]);
 
   async function handleVectorFile(file?: File) {
     if (!file) return;
@@ -141,6 +206,9 @@ export function Explore() {
       setVectorName(file.name);
       setAoi(bbox);
       setRegionId(null);
+      setAdminCountry('');
+      setAdminLevel1('');
+      setAdminLevel2('');
       setRemoteBbox(bbox);
       setFocus({ center: [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], zoom: 10, key: focusKey.current });
       toast.success(lang === 'zh' ? `已加载 ${file.name}` : `${file.name} loaded`);
@@ -151,26 +219,23 @@ export function Explore() {
     }
   }
 
-  function chooseMode(mode: 'coordinate' | 'admin' | 'vector' | 'draw') {
-    setSelectionMode(mode);
-    if (mode === 'draw') setDrawing(true);
-  }
-
   function renderAreaSelector() {
+    const selectedGlobalCountry = globalCountries.find((country) => country.iso2 === adminCountry);
+    const localCountry = ADMINISTRATIVE_AREAS.find((country) => country.id === adminCountry || LOCAL_COUNTRY_ISO[country.id] === adminCountry || country.name === selectedGlobalCountry?.name || country.nameEn === selectedGlobalCountry?.name);
+    const selectedCountry = selectedGlobalCountry ?? localCountry;
+    const selectedLevel1 = globalStates.find((state) => state.name === adminLevel1) ?? localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1);
     return (
       <div className="mt-3 space-y-3 border-t border-border pt-3">
-        <div className="grid grid-cols-4 gap-1 rounded-md border border-border bg-input-background p-1">
+        <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-input-background p-1">
           {([
-            ['coordinate', LocateFixed, t.explore.coordinate],
             ['admin', MapPinned, t.explore.adminRegion],
             ['vector', Upload, t.explore.uploadVector],
-            ['draw', PencilLine, t.explore.drawArea],
           ] as const).map(([mode, Icon, label]) => (
             <button
               key={mode}
               type="button"
               className={`flex min-w-0 flex-col items-center gap-1 rounded px-1 py-2 text-[10px] transition-colors ${selectionMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-              onClick={() => chooseMode(mode)}
+              onClick={() => setSelectionMode(mode)}
               title={label}
             >
               <Icon className="size-3.5" />
@@ -178,24 +243,84 @@ export function Explore() {
             </button>
           ))}
         </div>
-        {selectionMode === 'coordinate' && (
-          <div className="flex gap-2">
-            <Input value={coordinateInput} onChange={(event) => setCoordinateInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && submitCoordinates()} placeholder={t.explore.coordinatePlaceholder} className="h-8 text-xs" />
-            <Button type="button" size="sm" className="h-8 shrink-0 px-3" onClick={submitCoordinates}>{t.common.search}</Button>
-          </div>
-        )}
         {selectionMode === 'admin' && (
-          <select
-            value={adminSelection}
-            onChange={(event) => {
-              const region = REGIONS.find((item) => item.id === event.target.value);
-              if (region) selectRegion(region);
-            }}
-            className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
-          >
-            <option value="">{t.explore.adminPlaceholder}</option>
-            {REGIONS.map((region) => <option key={region.id} value={region.id}>{lang === 'zh' ? region.name : region.nameEn}</option>)}
-          </select>
+          <div className="space-y-2">
+            <label className="block space-y-1">
+              <span className="tech-label text-[9px] text-muted-foreground">{t.explore.country}</span>
+              <select
+                value={adminCountry}
+                onChange={(event) => {
+                  setAdminCountry(event.target.value);
+                  setAdminLevel1('');
+                  setAdminLevel2('');
+                  setGlobalCities([]);
+                  const country = globalCountries.find((item) => item.iso2 === event.target.value);
+                  setGlobalStates(country?.states ?? localCountry?.subdivisions.map((area) => ({ name: area.name })) ?? []);
+                }}
+                className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">{t.explore.countryPlaceholder}</option>
+                {(globalCountries.length ? globalCountries : ADMINISTRATIVE_AREAS.map((country) => ({ iso2: LOCAL_COUNTRY_ISO[country.id] ?? country.id, name: lang === 'zh' ? country.name : country.nameEn, states: country.subdivisions.map((area) => ({ name: area.name })), iso3: country.id }))).map((country) => <option key={country.iso2} value={country.iso2}>{countryLabel(country, lang)}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel1}</span>
+              <select
+                value={adminLevel1}
+                disabled={!selectedCountry}
+                onChange={(event) => {
+                  setAdminLevel1(event.target.value);
+                  setAdminLevel2('');
+                  setGlobalCities([]);
+                  const country = globalCountries.find((item) => item.iso2 === adminCountry);
+                  if (country) {
+                    const requestId = ++cityRequestRef.current;
+                    setAdminLoading(true);
+                    fetchGlobalCities(country.name, event.target.value)
+                      .then((cities) => {
+                        if (requestId === cityRequestRef.current) setGlobalCities(cities);
+                      })
+                      .catch(() => {
+                    const fallback = localCountry?.subdivisions.find((area) => area.id === event.target.value || area.name === event.target.value || area.nameEn === event.target.value);
+                        if (requestId === cityRequestRef.current && fallback) setGlobalCities(fallback.localities.map((locality) => {
+                          const region = REGIONS.find((item) => item.id === locality.regionId);
+                          return { id: locality.id, name: locality.name, displayName: locality.nameEn, lat: region?.center[1] ?? 0, lon: region?.center[0] ?? 0, bbox: region ? regionSearchBbox(region) : undefined };
+                        }));
+                      })
+                      .finally(() => {
+                        if (requestId === cityRequestRef.current) setAdminLoading(false);
+                      });
+                  }
+                }}
+                className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">{t.explore.adminLevel1Placeholder}</option>
+                {(globalCountries.find((country) => country.iso2 === adminCountry)?.states ?? localCountry?.subdivisions.map((area) => ({ name: area.name, id: area.id })) ?? []).map((area) => <option key={'id' in area ? area.id : area.name} value={area.name}>{area.name}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel2}</span>
+              <select
+                value={adminLevel2}
+                disabled={!selectedLevel1}
+                onChange={(event) => {
+                  setAdminLevel2(event.target.value);
+                  const city = globalCities.find((item) => item.id === event.target.value);
+                  if (city) selectGlobalCity(city);
+                  else {
+                    const locality = localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.find((item) => item.id === event.target.value);
+                    const region = locality && REGIONS.find((item) => item.id === locality.regionId);
+                    if (region) selectRegion(region);
+                  }
+                }}
+                className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">{adminLoading ? (lang === 'zh' ? '加载城市中…' : 'Loading cities…') : t.explore.adminLevel2Placeholder}</option>
+                {globalCities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}
+                {!globalCities.length && localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.map((area) => <option key={area.id} value={area.id}>{lang === 'zh' ? area.name : area.nameEn}</option>)}
+              </select>
+            </label>
+          </div>
         )}
         {selectionMode === 'vector' && (
           <div>
@@ -204,7 +329,6 @@ export function Explore() {
             <p className="mt-1 text-[10px] text-muted-foreground">{t.explore.uploadVectorDesc}</p>
           </div>
         )}
-        {selectionMode === 'draw' && <p className="text-[10px] text-muted-foreground">{t.explore.drawHint}</p>}
       </div>
     );
   }
@@ -432,7 +556,6 @@ export function Explore() {
               size="sm"
               className="bg-card/90 backdrop-blur"
               onClick={() => {
-                setSelectionMode('draw');
                 setDrawing((d) => !d);
               }}
             >
@@ -447,7 +570,6 @@ export function Explore() {
                 onClick={() => {
                   setAoi(null);
                   setVectorName('');
-                  setAdminSelection('');
                   if (regionId) {
                     const region = REGIONS.find((item) => item.id === regionId);
                     setRemoteBbox(region ? regionSearchBbox(region) : null);

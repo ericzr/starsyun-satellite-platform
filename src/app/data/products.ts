@@ -117,6 +117,66 @@ export const REGIONS: Region[] = [
   { id: 'saopaulo', name: '圣保罗', nameEn: 'São Paulo', center: [-46.633, -23.55], zoom: 11, aliases: ['sao paulo', 'são paulo', '圣保罗'] },
 ];
 
+export interface AdministrativeArea {
+  id: string;
+  name: string;
+  nameEn: string;
+  subdivisions: {
+    id: string;
+    name: string;
+    nameEn: string;
+    localities: {
+      id: string;
+      name: string;
+      nameEn: string;
+      regionId: Region['id'];
+    }[];
+  }[];
+}
+
+// Initial three-level administrative coverage for the platform's active business areas.
+// The UI is data-driven so global boundary/geocoding services can extend it without changing Explore.
+export const ADMINISTRATIVE_AREAS: AdministrativeArea[] = [
+  {
+    id: 'china', name: '中国', nameEn: 'China', subdivisions: [
+      { id: 'shanghai', name: '上海市', nameEn: 'Shanghai', localities: [{ id: 'pudong', name: '浦东新区', nameEn: 'Pudong New Area', regionId: 'shanghai' }] },
+      { id: 'guangdong', name: '广东省', nameEn: 'Guangdong', localities: [{ id: 'shenzhen', name: '深圳市', nameEn: 'Shenzhen', regionId: 'shenzhen' }] },
+      { id: 'beijing', name: '北京市', nameEn: 'Beijing', localities: [{ id: 'beijing', name: '北京市', nameEn: 'Beijing', regionId: 'beijing' }] },
+      { id: 'inner-mongolia', name: '内蒙古自治区', nameEn: 'Inner Mongolia', localities: [{ id: 'ordos', name: '鄂尔多斯市', nameEn: 'Ordos', regionId: 'ordos' }] },
+    ],
+  },
+  {
+    id: 'uae', name: '阿拉伯联合酋长国', nameEn: 'United Arab Emirates', subdivisions: [
+      { id: 'dubai', name: '迪拜酋长国', nameEn: 'Dubai Emirate', localities: [{ id: 'jebel-ali', name: '杰贝阿里港', nameEn: 'Jebel Ali Port', regionId: 'dubai' }] },
+    ],
+  },
+  {
+    id: 'saudi-arabia', name: '沙特阿拉伯', nameEn: 'Saudi Arabia', subdivisions: [
+      { id: 'riyadh-province', name: '利雅得省', nameEn: 'Riyadh Province', localities: [{ id: 'riyadh', name: '利雅得', nameEn: 'Riyadh', regionId: 'riyadh' }] },
+    ],
+  },
+  {
+    id: 'singapore', name: '新加坡', nameEn: 'Singapore', subdivisions: [
+      { id: 'singapore', name: '新加坡', nameEn: 'Singapore', localities: [{ id: 'singapore', name: '新加坡', nameEn: 'Singapore', regionId: 'singapore' }] },
+    ],
+  },
+  {
+    id: 'indonesia', name: '印度尼西亚', nameEn: 'Indonesia', subdivisions: [
+      { id: 'jakarta', name: '雅加达首都特区', nameEn: 'Jakarta Special Capital Region', localities: [{ id: 'jakarta', name: '雅加达', nameEn: 'Jakarta', regionId: 'jakarta' }] },
+    ],
+  },
+  {
+    id: 'kenya', name: '肯尼亚', nameEn: 'Kenya', subdivisions: [
+      { id: 'nairobi-county', name: '内罗毕县', nameEn: 'Nairobi County', localities: [{ id: 'nairobi', name: '内罗毕', nameEn: 'Nairobi', regionId: 'nairobi' }] },
+    ],
+  },
+  {
+    id: 'brazil', name: '巴西', nameEn: 'Brazil', subdivisions: [
+      { id: 'sao-paulo', name: '圣保罗州', nameEn: 'São Paulo', localities: [{ id: 'sao-paulo', name: '圣保罗', nameEn: 'São Paulo', regionId: 'saopaulo' }] },
+    ],
+  },
+];
+
 export interface Product {
   id: string;
   productCode: string;
