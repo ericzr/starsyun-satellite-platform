@@ -28,7 +28,7 @@ const LOCAL_STATE_LABELS: Record<string, Record<string, string>> = {
     Guangdong: '广东省', 'Guangxi Zhuang Autonomous Region': '广西壮族自治区', Guizhou: '贵州省', Hainan: '海南省',
     Hebei: '河北省', Heilongjiang: '黑龙江省', Henan: '河南省', 'Hong Kong': '香港特别行政区', Hubei: '湖北省',
     Hunan: '湖南省', 'Inner Mongolia': '内蒙古自治区', Jiangsu: '江苏省', Jiangxi: '江西省', Jilin: '吉林省',
-    Liaoning: '辽宁省', Macau: '澳门特别行政区', 'Ningxia Hui Autonomous Region': '宁夏回族自治区', Qinghai: '青海省',
+    Liaoning: '辽宁省', Macau: '澳门特别行政区', Keelung: '基隆市', Kinmen: '金门县', Penghu: '澎湖县', 'Ningxia Hui Autonomous Region': '宁夏回族自治区', Qinghai: '青海省',
     Shaanxi: '陕西省', Shandong: '山东省', Shanxi: '山西省', Sichuan: '四川省',
     'Taiwan Province, People\'s Republic of China': '台湾省', Taiwan: '台湾省', 'Tibet Autonomous Region': '西藏自治区',
     Xinjiang: '新疆维吾尔自治区', Yunnan: '云南省', Zhejiang: '浙江省',
