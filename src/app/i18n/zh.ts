@@ -91,7 +91,7 @@ export const zh = {
     results: '搜索结果',
     resultsCount: (n: number) => `${n} 条数据产品`,
     drawHint: '在地图上拖拽绘制矩形，圈定目标区域',
-    drawRect: '绘制矩形',
+    drawRect: '绘制区域',
     drawing: '绘制中…点击拖拽',
     clearArea: '清除选区',
     targetArea: '目标区域面积',

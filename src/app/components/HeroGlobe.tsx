@@ -4,6 +4,7 @@ import { useTheme } from 'next-themes';
 import dayTextureUrl from '../../assets/earth/blue-marble-day.webp';
 import nightTextureUrl from '../../assets/earth/black-marble-night.webp';
 import topologyTextureUrl from '../../assets/earth/earth-topology.webp';
+import cloudTextureUrl from '../../assets/earth/earth-clouds.png';
 
 /**
  * A genuine WebGL 3D globe: a lit, texture-mapped sphere that auto-rotates and can be
@@ -104,6 +105,7 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     let nightMaterial: THREE.ShaderMaterial | undefined;
     let cloudMaterial: THREE.ShaderMaterial | undefined;
     let cloudGeometry: THREE.SphereGeometry | undefined;
+    let cloudMesh: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial> | undefined;
 
     // NASA Blue Marble + elevation + Black Marble are bundled as 2K WebP assets. This removes
     // two cross-origin CDN waits and the previous 2M-pixel main-thread canvas conversion.
@@ -148,28 +150,22 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       // The procedural sphere remains a complete, immediate fallback.
     });
 
-    // NASA GIBS MODIS cloud fraction: global daily composite, public and CORS-enabled.
-    // This is intentionally a separate request so cloud loading never delays the globe.
-    // MODIS cloud-fraction composites can lag UTC by several hours. Yesterday's
-    // date is the most reliable latest-available global composite.
-    const cloudDate = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const cloudUrl = `https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=MODIS_Terra_Cloud_Fraction_Day&STYLES=&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=1024&HEIGHT=512&FORMAT=image/png&TRANSPARENT=TRUE&TIME=${cloudDate}`;
-    loader.loadAsync(cloudUrl).then((cloudTexture) => {
-      if (disposed) {
-        cloudTexture.dispose();
-        return;
-      }
-      cloudTexture.colorSpace = THREE.NoColorSpace;
-      cloudTexture.minFilter = THREE.LinearFilter;
-      cloudMaterial = createCloudMaterial(cloudTexture, isLight);
-      cloudGeometry = new THREE.SphereGeometry(1.612, 64, 64);
-      const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
-      clouds.renderOrder = 3;
-      globe.add(clouds);
-      disposables.push(cloudTexture);
-    }).catch(() => {
-      // Cloud data is an enhancement; the local earth texture remains the fallback.
-    });
+    // A bundled, transparent cloud albedo keeps first paint deterministic and avoids
+    // the visible scan stripes in the raw MODIS classification WMS layer. The
+    // shader animates two drifting samples so the layer feels alive without another
+    // network request or a per-frame canvas update.
+    const cloudsTexture = loader.load(cloudTextureUrl);
+    cloudsTexture.colorSpace = THREE.NoColorSpace;
+    cloudsTexture.wrapS = THREE.RepeatWrapping;
+    cloudsTexture.wrapT = THREE.ClampToEdgeWrapping;
+    cloudsTexture.minFilter = THREE.LinearMipmapLinearFilter;
+    cloudsTexture.anisotropy = maxAniso;
+    cloudMaterial = createCloudMaterial(cloudsTexture, isLight);
+    cloudGeometry = new THREE.SphereGeometry(1.628, 80, 80);
+    cloudMesh = new THREE.Mesh(cloudGeometry, cloudMaterial);
+    cloudMesh.renderOrder = 3;
+    globe.add(cloudMesh);
+    disposables.push(cloudsTexture);
 
     // Thin latitude/longitude wireframe for a techy feel - reduced segments from 24,16 to 16,12
     const grid = new THREE.LineSegments(
@@ -430,6 +426,8 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
         s.mesh.quaternion.copy(localQuaternion);
       });
       stars.rotation.y += dt * 0.01;
+      if (cloudMaterial) cloudMaterial.uniforms.time.value += dt;
+      if (cloudMesh) cloudMesh.rotation.y += dt * 0.0025;
 
       renderer.render(scene, camera);
     };
@@ -578,28 +576,43 @@ function createCloudMaterial(cloudMap: THREE.Texture, isLight: boolean) {
   return new THREE.ShaderMaterial({
     uniforms: {
       cloudMap: { value: cloudMap },
-      cloudColor: { value: new THREE.Color(isLight ? 0x505050 : 0xd7d7d7) },
-      opacity: { value: isLight ? 0.12 : 0.1 },
+      cloudColor: { value: new THREE.Color(isLight ? 0xd6d6d6 : 0xf0f0f0) },
+      opacity: { value: isLight ? 0.24 : 0.2 },
+      time: { value: 0 },
     },
     vertexShader: `
       varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vViewDirection;
       void main() {
         vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        vNormal = normalize(normalMatrix * normal);
+        vViewDirection = normalize(-viewPosition.xyz);
+        gl_Position = projectionMatrix * viewPosition;
       }
     `,
     fragmentShader: `
       uniform sampler2D cloudMap;
       uniform vec3 cloudColor;
       uniform float opacity;
+      uniform float time;
       varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vViewDirection;
       void main() {
-        vec4 source = texture2D(cloudMap, vUv);
-        // GIBS uses a categorical cloud-fraction palette. Red/yellow bins are
-        // cloud signal; transparent pixels are missing/no-data areas.
-        float cloudSignal = smoothstep(0.03, 0.24, source.r - source.b);
-        float alpha = source.a * cloudSignal * opacity;
-        gl_FragColor = vec4(cloudColor, alpha);
+        // Two low-speed offsets create a soft parallax drift while preserving the
+        // recognizable global cloud structures in the source texture.
+        vec2 driftA = vec2(time * 0.006, time * 0.00075);
+        vec2 driftB = vec2(-time * 0.0022, time * 0.00042);
+        float cloudA = texture2D(cloudMap, fract(vUv + driftA)).r;
+        float cloudB = texture2D(cloudMap, fract(vUv * 1.015 + driftB)).r;
+        float cloudSignal = smoothstep(0.24, 0.68, cloudA * 0.72 + cloudB * 0.28);
+        float facing = max(dot(normalize(vNormal), normalize(vViewDirection)), 0.0);
+        float rimFade = smoothstep(0.02, 0.32, facing);
+        float highlight = 0.78 + 0.22 * facing;
+        float alpha = cloudSignal * rimFade * opacity;
+        gl_FragColor = vec4(cloudColor * highlight, alpha);
       }
     `,
     transparent: true,

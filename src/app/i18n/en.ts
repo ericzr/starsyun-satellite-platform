@@ -93,7 +93,7 @@ export const en: Translation = {
     results: 'Results',
     resultsCount: (n: number) => `${n} data products`,
     drawHint: 'Drag on the map to draw a rectangle over your area of interest',
-    drawRect: 'Draw Rectangle',
+    drawRect: 'Draw Area',
     drawing: 'Drawing… click & drag',
     clearArea: 'Clear Area',
     targetArea: 'Area of interest',
