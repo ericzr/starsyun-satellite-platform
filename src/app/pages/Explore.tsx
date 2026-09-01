@@ -78,6 +78,10 @@ function cityLabel(city: GlobalCity, localCountry: (typeof ADMINISTRATIVE_AREAS)
   return localCity?.name ?? city.name;
 }
 
+function isSecondLevelLocality(name: string) {
+  return !/(区|县|旗|镇|乡|街道)$/.test(name.trim());
+}
+
 function matchRegion(q: string) {
   const s = q.trim().toLowerCase();
   if (!s) return null;
@@ -456,7 +460,7 @@ export function Explore() {
               >
                 <option value="">{adminLoading ? (lang === 'zh' ? '加载城市中…' : 'Loading cities…') : t.explore.adminLevel2Placeholder}</option>
                 {globalCities.map((city) => <option key={city.id} value={city.id}>{cityLabel(city, localCountry, adminLevel1, lang)}</option>)}
-                {!globalCities.length && localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.map((area) => <option key={area.id} value={area.id}>{lang === 'zh' ? area.name : area.nameEn}</option>)}
+                {!globalCities.length && localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.filter((area) => isSecondLevelLocality(area.name)).map((area) => <option key={area.id} value={area.id}>{lang === 'zh' ? area.name : area.nameEn}</option>)}
               </select>
             </label>
             <label className="block space-y-1">

@@ -18,6 +18,7 @@ export interface GlobalCity {
   lon: number;
   bbox?: [number, number, number, number];
   boundary?: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
+  administrativeType?: string;
 }
 
 const COUNTRIES_URL = 'https://countriesnow.space/api/v0.1/countries/states';
@@ -52,6 +53,14 @@ function dedupePlaces(names: string[], country: string, state: string) {
       seen.add(key);
       return true;
     });
+}
+
+function isSecondLevelName(name: string) {
+  const value = name.trim().toLowerCase();
+  if (!value) return false;
+  // CountriesNow returns a flat city list; exclude common third-level
+  // suffixes so districts/towns do not leak into the second-level selector.
+  return !/(district|county|town|village|borough|suburb|quarter|banner|旗|县|区|镇|乡|街道)$/i.test(value);
 }
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}) {
@@ -102,7 +111,7 @@ export async function fetchGlobalCities(country: string, state: string, lang: 'z
     if (!response.ok) throw new Error('CountriesNow unavailable');
     const payload = await response.json() as { error: boolean; data?: string[] };
     if (!payload.error && payload.data?.length) {
-      return dedupePlaces(payload.data, country, state).map((name) => ({ id: `${country}:${state}:${name}`, name, displayName: name, lat: 0, lon: 0 }));
+      return dedupePlaces(payload.data, country, state).filter(isSecondLevelName).map((name) => ({ id: `${country}:${state}:${name}`, name, displayName: name, lat: 0, lon: 0 }));
     }
   } catch {
     // Try the geocoder below when the directory endpoint is unavailable.
@@ -135,7 +144,7 @@ export async function fetchGlobalCities(country: string, state: string, lang: 'z
         administrativeType: place.type,
         bbox: box && box.length === 4 ? [box[2], box[0], box[3], box[1]] as [number, number, number, number] : undefined,
     };
-    }).filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lon) && !['administrative', 'state', 'province', 'region', 'country'].includes(place.administrativeType ?? '')).filter((place) => {
+    }).filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lon) && ['city', 'municipality', 'county', 'state_district'].includes(place.administrativeType ?? '')).filter((place) => {
       const key = placeKey(place.name);
       if (!key || seen.has(key) || key === placeKey(state) || key === placeKey(country)) return false;
       seen.add(key);
@@ -151,7 +160,7 @@ export async function fetchGlobalCities(country: string, state: string, lang: 'z
   if (!response.ok) throw new Error(`City directory unavailable (${response.status})`);
   const payload = await response.json() as { error: boolean; data?: string[] };
   if (payload.error || !payload.data?.length) throw new Error('City directory returned no cities');
-  return dedupePlaces(payload.data, country, state).map((name) => ({ id: `${country}:${state}:${name}`, name, displayName: name, lat: 0, lon: 0 }));
+  return dedupePlaces(payload.data, country, state).filter(isSecondLevelName).map((name) => ({ id: `${country}:${state}:${name}`, name, displayName: name, lat: 0, lon: 0 }));
 }
 
 /** Resolves third-level districts for a selected city/state path via Nominatim. */
