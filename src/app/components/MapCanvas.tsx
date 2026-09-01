@@ -104,6 +104,15 @@ function getBasemapStyle(mode: BaseLayerMode, theme: 'light' | 'dark'): ML.Style
 
 const NASA_LAYER_DATE = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 const NASA_VIIRS_TILES = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${NASA_LAYER_DATE}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
+// Public imagery mosaics. These are optional overlays and do not replace the
+// selected monochrome basemap, so the explorer remains usable when an imagery
+// provider is unavailable.
+const SENTINEL2_TILES = (import.meta.env.VITE_SENTINEL2_TILES_URL as string | undefined)?.trim()
+  || 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg';
+const ESRI_IMAGERY_TILES = (import.meta.env.VITE_ESRI_IMAGERY_TILES_URL as string | undefined)?.trim()
+  || 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+type SatelliteLayerMode = 'none' | 'nasa' | 'sentinel2' | 'esri';
 
 export interface Footprint {
   id: string;
@@ -153,7 +162,7 @@ export function MapCanvas({
   const { lang, t } = useI18n();
   const theme = resolvedTheme === 'light' ? 'light' : 'dark';
   const [baseLayerMode, setBaseLayerMode] = useState<BaseLayerMode>('carto');
-  const [nasaVisible, setNasaVisible] = useState(false);
+  const [satelliteLayer, setSatelliteLayer] = useState<SatelliteLayerMode>('none');
   const [layerMenuOpen, setLayerMenuOpen] = useState(false);
 
   // keep latest props for event handlers
@@ -169,8 +178,8 @@ export function MapCanvas({
   languageRef.current = lang;
   const baseLayerModeRef = useRef(baseLayerMode);
   baseLayerModeRef.current = baseLayerMode;
-  const nasaVisibleRef = useRef(nasaVisible);
-  nasaVisibleRef.current = nasaVisible;
+  const satelliteLayerRef = useRef<SatelliteLayerMode>(satelliteLayer);
+  satelliteLayerRef.current = satelliteLayer;
 
   // Initialize map once.
   useEffect(() => {
@@ -202,7 +211,7 @@ export function MapCanvas({
         ensureLayers(map!, accentRef.current);
         applyMapLanguage(map!, languageRef.current);
         pushData(map!);
-        syncLayerVisibility(map!, nasaVisibleRef.current);
+        syncSatelliteLayer(map!, satelliteLayerRef.current);
         const initialFocus = focusRef.current;
         if (initialFocus) {
           map!.flyTo({ center: initialFocus.center, zoom: initialFocus.zoom, speed: 1.4, essential: true });
@@ -213,7 +222,7 @@ export function MapCanvas({
           ensureLayers(map!, accentRef.current);
           applyMapLanguage(map!, languageRef.current);
           pushData(map!);
-          syncLayerVisibility(map!, nasaVisibleRef.current);
+          syncSatelliteLayer(map!, satelliteLayerRef.current);
         }
       });
       bindDrawing(map);
@@ -252,8 +261,8 @@ export function MapCanvas({
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
     ensureLayers(map, accentRef.current);
-    syncLayerVisibility(map, nasaVisible);
-  }, [nasaVisible]);
+    syncSatelliteLayer(map, satelliteLayer);
+  }, [satelliteLayer]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -409,43 +418,38 @@ export function MapCanvas({
           </button>
           {layerMenuOpen && (
             <div className="absolute bottom-11 right-0 min-w-44 rounded-md border border-border bg-card/95 p-1.5 text-xs text-foreground shadow-lg backdrop-blur">
-              <button
-                type="button"
-                onClick={() => { setBaseLayerMode('carto'); setNasaVisible(false); setLayerMenuOpen(false); }}
-                className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${baseLayerMode === 'carto' && !nasaVisible ? 'bg-accent' : ''}`}
-              >
-                <span>{t.explore.mapCartoLayer}</span>
-                {baseLayerMode === 'carto' && !nasaVisible && <span aria-hidden="true">✓</span>}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setBaseLayerMode('openfreemap'); setNasaVisible(false); setLayerMenuOpen(false); }}
-                className={`mt-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${baseLayerMode === 'openfreemap' && !nasaVisible ? 'bg-accent' : ''}`}
-              >
-                <span>{t.explore.mapOpenFreeMapLayer}</span>
-                {baseLayerMode === 'openfreemap' && !nasaVisible && <span aria-hidden="true">✓</span>}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setBaseLayerMode('osm'); setNasaVisible(false); setLayerMenuOpen(false); }}
-                className={`mt-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${baseLayerMode === 'osm' && !nasaVisible ? 'bg-accent' : ''}`}
-              >
-                <span>{t.explore.mapOsmLayer}</span>
-                {baseLayerMode === 'osm' && !nasaVisible && <span aria-hidden="true">✓</span>}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setNasaVisible(true); setLayerMenuOpen(false); }}
-                className={`mt-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-accent ${nasaVisible ? 'bg-accent' : ''}`}
-              >
-                <span>{t.explore.mapSatelliteLayer}</span>
-                {nasaVisible && <span aria-hidden="true">✓</span>}
-              </button>
+              <div className="px-2 pb-1 pt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{t.explore.mapBaseLayer}</div>
+              <LayerOption label={t.explore.mapCartoLayer} active={baseLayerMode === 'carto' && satelliteLayer === 'none'} onClick={() => { setBaseLayerMode('carto'); setSatelliteLayer('none'); setLayerMenuOpen(false); }} />
+              <LayerOption label={t.explore.mapOpenFreeMapLayer} active={baseLayerMode === 'openfreemap' && satelliteLayer === 'none'} onClick={() => { setBaseLayerMode('openfreemap'); setSatelliteLayer('none'); setLayerMenuOpen(false); }} />
+              <LayerOption label={t.explore.mapOsmLayer} active={baseLayerMode === 'osm' && satelliteLayer === 'none'} onClick={() => { setBaseLayerMode('osm'); setSatelliteLayer('none'); setLayerMenuOpen(false); }} />
+              <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">{t.explore.mapImagery}</div>
+              <LayerOption label={t.explore.mapSatelliteNasa} active={satelliteLayer === 'nasa'} onClick={() => { setSatelliteLayer('nasa'); setLayerMenuOpen(false); }} />
+              <LayerOption label={t.explore.mapSatelliteSentinel} active={satelliteLayer === 'sentinel2'} onClick={() => { setSatelliteLayer('sentinel2'); setLayerMenuOpen(false); }} />
+              <LayerOption label={t.explore.mapSatelliteEsri} active={satelliteLayer === 'esri'} onClick={() => { setSatelliteLayer('esri'); setLayerMenuOpen(false); }} />
+              <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">{t.explore.mapLicensedSources}</div>
+              <LayerOption label={t.explore.mapGoogleEarth} disabled />
+              <LayerOption label={t.explore.mapJilin1} disabled />
+              <LayerOption label={t.explore.mapSiwei} disabled />
+              <div className="px-2 py-1 text-[11px] text-muted-foreground">{t.explore.mapLicensedSourcesHint}</div>
             </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function LayerOption({ label, active, onClick, disabled = false }: { label: string; active?: boolean; onClick?: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`mt-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left ${disabled ? 'cursor-not-allowed text-muted-foreground/70' : 'hover:bg-accent'} ${active ? 'bg-accent' : ''}`}
+    >
+      <span>{label}</span>
+      {active && <span aria-hidden="true">✓</span>}
+    </button>
   );
 }
 
@@ -492,6 +496,24 @@ function ensureLayers(map: MlMap, accent: string) {
       attribution: 'NASA GIBS / EOSDIS',
     });
   }
+  if (!map.getSource('sentinel2')) {
+    map.addSource('sentinel2', {
+      type: 'raster',
+      tiles: [SENTINEL2_TILES],
+      tileSize: 256,
+      maxzoom: 14,
+      attribution: 'Sentinel-2 / EOX IT Services',
+    });
+  }
+  if (!map.getSource('esri-imagery')) {
+    map.addSource('esri-imagery', {
+      type: 'raster',
+      tiles: [ESRI_IMAGERY_TILES],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: 'Esri World Imagery',
+    });
+  }
   if (!map.getLayer('nasa-viirs-layer')) {
     map.addLayer({
       id: 'nasa-viirs-layer',
@@ -499,6 +521,24 @@ function ensureLayers(map: MlMap, accent: string) {
       source: 'nasa-viirs',
       layout: { visibility: 'none' },
       paint: { 'raster-opacity': 0.78, 'raster-fade-duration': 0 },
+    });
+  }
+  if (!map.getLayer('sentinel2-layer')) {
+    map.addLayer({
+      id: 'sentinel2-layer',
+      type: 'raster',
+      source: 'sentinel2',
+      layout: { visibility: 'none' },
+      paint: { 'raster-opacity': 0.82, 'raster-fade-duration': 0 },
+    });
+  }
+  if (!map.getLayer('esri-imagery-layer')) {
+    map.addLayer({
+      id: 'esri-imagery-layer',
+      type: 'raster',
+      source: 'esri-imagery',
+      layout: { visibility: 'none' },
+      paint: { 'raster-opacity': 0.84, 'raster-fade-duration': 0 },
     });
   }
   if (!map.getSource('footprints')) map.addSource('footprints', { type: 'geojson', data: empty });
@@ -579,7 +619,13 @@ function ensureLayers(map: MlMap, accent: string) {
   }
 }
 
-function syncLayerVisibility(map: MlMap, visible: boolean) {
-  if (!map.getLayer('nasa-viirs-layer')) return;
-  map.setLayoutProperty('nasa-viirs-layer', 'visibility', visible ? 'visible' : 'none');
+function syncSatelliteLayer(map: MlMap, mode: SatelliteLayerMode) {
+  const layers: Record<Exclude<SatelliteLayerMode, 'none'>, string> = {
+    nasa: 'nasa-viirs-layer',
+    sentinel2: 'sentinel2-layer',
+    esri: 'esri-imagery-layer',
+  };
+  for (const [key, layerId] of Object.entries(layers) as [Exclude<SatelliteLayerMode, 'none'>, string][]) {
+    if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', key === mode ? 'visible' : 'none');
+  }
 }

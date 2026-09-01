@@ -200,29 +200,70 @@
   .map-theme-light .maplibregl-ctrl-group {
     overflow: hidden;
     border: 1px solid rgba(0, 0, 0, 0.16);
-    background: #ffffff;
+    background: #ffffff !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   }
 
   .map-theme-light .maplibregl-ctrl-group button {
-    background-color: #ffffff;
+    background-color: #ffffff !important;
     border-color: rgba(0, 0, 0, 0.1);
   }
 
   .map-theme-dark .maplibregl-ctrl-group {
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.18);
-    background: #101012;
+    background: #101012 !important;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   }
 
   .map-theme-dark .maplibregl-ctrl-group button {
-    background-color: #101012;
+    background-color: #101012 !important;
     border-color: rgba(255, 255, 255, 0.1);
   }
 
-  .map-theme-dark .maplibregl-ctrl-group .maplibregl-ctrl-icon {
-    filter: invert(1);
+  /* MapLibre applies its zoom glyph as a background image on the button.
+     Replacing that image with tiny CSS strokes avoids inverting the entire
+     button (which previously made dark-mode controls look white). */
+  .map-theme-light .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in,
+  .map-theme-light .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-out,
+  .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in,
+  .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-out {
+    position: relative;
+    background-image: none !important;
+    filter: none !important;
+  }
+
+  .map-theme-light .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in::before,
+  .map-theme-light .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in::after,
+  .map-theme-light .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-out::before,
+  .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in::before,
+  .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in::after,
+  .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-out::before {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: block;
+    width: 12px;
+    height: 2px;
+    border-radius: 1px;
+    background: currentColor;
+    content: '';
+    transform: translate(-50%, -50%);
+  }
+
+  .map-theme-light .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in,
+  .map-theme-light .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-out {
+    color: #111214;
+  }
+
+  .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in,
+  .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-out {
+    color: #f4f4f5;
+  }
+
+  .map-theme-light .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in::after,
+  .map-theme-dark .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in::after {
+    transform: translate(-50%, -50%) rotate(90deg);
   }
 
   .font-mono {
