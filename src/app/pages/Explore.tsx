@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List, Upload, MapPinned, ChevronDown } from 'lucide-react';
+import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List, Upload, MapPinned, ChevronDown, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useI18n } from '../i18n';
 import { ADMINISTRATIVE_AREAS, PRODUCTS, REGIONS, type Product } from '../data/products';
@@ -232,7 +232,7 @@ export function Explore() {
     setAdminLevel2('');
   }
 
-  async function selectGlobalCity(city: GlobalCity) {
+  async function selectGlobalCity(city: GlobalCity, level: 'city' | 'district' = 'city') {
     adminGeoRequestRef.current += 1;
     focusKey.current += 1;
     setBoundary(null);
@@ -241,8 +241,12 @@ export function Explore() {
     const country = globalCountries.find((item) => item.iso2 === adminCountry);
     const localCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === adminCountry);
     const selectedState = adminLevel1;
-    setAdminLevel2(city.id);
-    setAdminLevel3('');
+    if (level === 'city') {
+      setAdminLevel2(city.id);
+      setAdminLevel3('');
+    } else {
+      setAdminLevel3(city.id);
+    }
     const displayName = cityLabel(city, localCountry, selectedState, lang);
     setSearch(displayName);
     // Keep known business regions responsive while the exact administrative
@@ -269,10 +273,49 @@ export function Explore() {
     setAoi(located.bbox ?? pointSearchBbox([located.lon, located.lat]));
     setFocus({ center: [located.lon, located.lat], zoom: located.boundary ? 10 : 11, key: focusKey.current });
     setRemoteBbox(located.bbox ?? pointSearchBbox([located.lon, located.lat]));
-    if (country) {
+    if (country && level === 'city') {
       fetchGlobalDistricts(country.name, selectedState, city.name, lang === 'zh' ? 'zh' : 'en')
         .then(setGlobalDistricts).catch(() => setGlobalDistricts([]));
     }
+  }
+
+  function clearAdminCountry() {
+    setAdminCountry('');
+    setAdminLevel1('');
+    setAdminLevel2('');
+    setAdminLevel3('');
+    setGlobalStates([]);
+    setGlobalCities([]);
+    setGlobalDistricts([]);
+    setRegionId(null);
+    setBoundary(null);
+    setAoi(null);
+    setRemoteBbox(null);
+  }
+
+  function clearAdminLevel1() {
+    setAdminLevel1('');
+    setAdminLevel2('');
+    setAdminLevel3('');
+    setGlobalCities([]);
+    setGlobalDistricts([]);
+    setRegionId(null);
+    setBoundary(null);
+    setAoi(null);
+    setRemoteBbox(null);
+  }
+
+  function clearAdminLevel2() {
+    setAdminLevel2('');
+    setAdminLevel3('');
+    setGlobalDistricts([]);
+    void selectGlobalState(adminLevel1);
+  }
+
+  function clearAdminLevel3() {
+    setAdminLevel3('');
+    const city = globalCities.find((item) => item.id === adminLevel2);
+    if (city) void selectGlobalCity(city);
   }
 
   async function selectGlobalState(state: string) {
@@ -408,10 +451,11 @@ export function Explore() {
         {selectionMode === 'admin' && areaSelectorOpen && (
           <div className="space-y-2">
             <label className="block space-y-1">
-              <span className="tech-label text-[9px] text-muted-foreground">{t.explore.country}</span>
+              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.country}</span>{adminCountry && <button type="button" aria-label={lang === 'zh' ? '清除国家或地区' : 'Clear country or region'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminCountry(); }}><X className="size-3" /></button>}</span>
               <select
                 value={adminCountry}
                 onChange={(event) => {
+                  if (!event.target.value) { clearAdminCountry(); return; }
                   setAdminCountry(event.target.value);
                   setAdminLevel1('');
                   setAdminLevel2('');
@@ -432,11 +476,12 @@ export function Explore() {
               </select>
             </label>
             {adminCountry && <label className="block space-y-1">
-              <span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel1}</span>
+              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel1}</span>{adminLevel1 && <button type="button" aria-label={lang === 'zh' ? '清除一级行政区' : 'Clear first-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel1(); }}><X className="size-3" /></button>}</span>
               <select
                 value={adminLevel1}
                 disabled={!selectedCountry}
                 onChange={(event) => {
+                  if (!event.target.value) { clearAdminLevel1(); return; }
                   void selectGlobalState(event.target.value);
                 }}
                 className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
@@ -446,11 +491,12 @@ export function Explore() {
               </select>
             </label>}
             {adminCountry && adminLevel1 && <label className="block space-y-1">
-              <span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel2}</span>
+              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel2}</span>{adminLevel2 && <button type="button" aria-label={lang === 'zh' ? '清除二级行政区' : 'Clear second-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel2(); }}><X className="size-3" /></button>}</span>
               <select
                 value={adminLevel2}
                 disabled={!selectedLevel1}
                 onChange={(event) => {
+                  if (!event.target.value) { clearAdminLevel2(); return; }
                   setAdminLevel2(event.target.value);
                   setAdminLevel3('');
                   setGlobalDistricts([]);
@@ -470,14 +516,15 @@ export function Explore() {
               </select>
             </label>}
             {adminCountry && adminLevel1 && adminLevel2 && <label className="block space-y-1">
-              <span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel3}</span>
+              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel3}</span>{adminLevel3 && <button type="button" aria-label={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel3(); }}><X className="size-3" /></button>}</span>
               <select
                 value={adminLevel3}
                 disabled={!adminLevel2}
                 onChange={(event) => {
+                  if (!event.target.value) { clearAdminLevel3(); return; }
                   const district = globalDistricts.find((item) => item.id === event.target.value);
                   setAdminLevel3(event.target.value);
-                  if (district) void selectGlobalCity(district);
+                  if (district) void selectGlobalCity(district, 'district');
                 }}
                 className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
