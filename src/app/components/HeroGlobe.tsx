@@ -53,6 +53,9 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
       scene.add(fill);
     }
 
+    camera.updateMatrixWorld();
+    const sunDirectionView = key.position.clone().normalize().transformDirection(camera.matrixWorldInverse);
+
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
     // Render the procedural globe immediately; local compressed textures replace it asynchronously.
@@ -104,7 +107,7 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     let disposed = false;
     let nightMaterial: THREE.ShaderMaterial | undefined;
     const cloudMaterials: THREE.ShaderMaterial[] = [];
-    let cloudGeometry: THREE.SphereGeometry | undefined;
+    const cloudGeometry = new THREE.SphereGeometry(1, 96, 64);
     const cloudMeshes: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>[] = [];
 
     // NASA Blue Marble + elevation + Black Marble are bundled as 2K WebP assets. This removes
@@ -137,8 +140,6 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
         night.colorSpace = THREE.SRGBColorSpace;
         night.anisotropy = maxAniso;
         night.minFilter = THREE.LinearMipmapLinearFilter;
-        camera.updateMatrixWorld();
-        const sunDirectionView = key.position.clone().normalize().transformDirection(camera.matrixWorldInverse);
         nightMaterial = createNightLightsMaterial(night, sunDirectionView);
         const nightLights = new THREE.Mesh(sphere.geometry, nightMaterial);
         // Keep the emissive layer coplanar with the terrain so city lights do not
@@ -162,16 +163,15 @@ export function HeroGlobe({ className, onRigChange }: { className?: string; onRi
     cloudsTexture.wrapT = THREE.ClampToEdgeWrapping;
     cloudsTexture.minFilter = THREE.LinearMipmapLinearFilter;
     cloudsTexture.anisotropy = maxAniso;
-    // Two nearby layers create parallax between cloud systems while remaining
-    // visually attached to the terrain. Their small radius difference is enough
-    // to prevent z-fighting without producing a floating shell.
-    cloudGeometry = new THREE.SphereGeometry(1, 96, 64);
+    // Two very shallow layers create a little parallax between cloud systems while
+    // staying almost coplanar with the terrain. A larger offset reads as a floating
+    // gray shell, especially at the limb.
     [
-      { radius: 1.6065, opacity: isLight ? 0.11 : 0.1, scale: 1, speed: 1 },
-      { radius: 1.609, opacity: isLight ? 0.065 : 0.06, scale: 1.45, speed: -0.62 },
+      { radius: 1.6008, opacity: isLight ? 0.07 : 0.08, scale: 1, speed: 1 },
+      { radius: 1.602, opacity: isLight ? 0.038 : 0.044, scale: 1.34, speed: -0.62 },
     ].forEach((layer) => {
-      const material = createCloudMaterial(cloudsTexture, isLight, layer);
-      const mesh = new THREE.Mesh(cloudGeometry!, material);
+      const material = createCloudMaterial(cloudsTexture, isLight, layer, sunDirectionView);
+      const mesh = new THREE.Mesh(cloudGeometry, material);
       mesh.scale.setScalar(layer.radius);
       mesh.renderOrder = 3;
       globe.add(mesh);
@@ -592,6 +592,7 @@ function createCloudMaterial(
   cloudMap: THREE.Texture,
   isLight: boolean,
   layer: { opacity: number; scale: number; speed: number },
+  sunDirectionView: THREE.Vector3,
 ) {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -600,6 +601,7 @@ function createCloudMaterial(
       opacity: { value: layer.opacity },
       mapScale: { value: layer.scale },
       driftSpeed: { value: layer.speed },
+      sunDirectionView: { value: sunDirectionView },
       time: { value: 0 },
     },
     vertexShader: `
@@ -620,6 +622,7 @@ function createCloudMaterial(
       uniform float opacity;
       uniform float mapScale;
       uniform float driftSpeed;
+      uniform vec3 sunDirectionView;
       uniform float time;
       varying vec2 vUv;
       varying vec3 vNormal;
@@ -643,20 +646,31 @@ function createCloudMaterial(
         float curl = sin(vUv.y * 18.0 + time * 0.18 * driftSpeed) * 0.008;
         vec2 driftA = vec2(time * 0.012 * driftSpeed, time * 0.0012 * driftSpeed);
         vec2 driftB = vec2(-time * 0.006 * driftSpeed, time * 0.0007 * driftSpeed);
-        vec2 uvA = vec2(fract(vUv.x * mapScale + driftA.x + curl), clamp(vUv.y * mapScale + driftA.y, 0.004, 0.996));
-        vec2 uvB = vec2(fract(vUv.x * mapScale * 1.19 + driftB.x - curl * 0.7), clamp(vUv.y * mapScale * 1.19 + driftB.y, 0.004, 0.996));
+        // Scale around the equator instead of clamping the enlarged UVs to the
+        // texture edges. Edge clamping creates an artificial gray band at the poles.
+        vec2 centeredUv = vUv - 0.5;
+        vec2 uvA = vec2(fract(centeredUv.x * mapScale + 0.5 + driftA.x + curl), clamp(centeredUv.y * mapScale + 0.5 + driftA.y, 0.004, 0.996));
+        vec2 uvB = vec2(fract(centeredUv.x * mapScale * 1.19 + 0.5 + driftB.x - curl * 0.7), clamp(centeredUv.y * mapScale * 1.19 + 0.5 + driftB.y, 0.004, 0.996));
         vec4 sampleA = texture2D(cloudMap, uvA);
         vec4 sampleB = texture2D(cloudMap, uvB);
         // The source is an alpha cloud mask. A moving low-frequency breakup field
         // makes each cloud mass evolve instead of moving as one rigid decal.
         float maskA = sampleA.a * smoothstep(0.18, 0.92, sampleA.r);
         float maskB = sampleB.a * smoothstep(0.18, 0.92, sampleB.r);
-        float breakup = mix(0.82, 1.16, noise(vUv * (5.0 + mapScale * 2.0) + vec2(time * 0.05 * driftSpeed, -time * 0.025 * driftSpeed)));
-        float cloudSignal = smoothstep(0.32, 0.76, (maskA * 0.78 + maskB * 0.22) * breakup);
+        float breakup = mix(0.74, 1.18, noise(vUv * (6.0 + mapScale * 2.0) + vec2(time * 0.035 * driftSpeed, -time * 0.02 * driftSpeed)));
+        float cloudSignal = smoothstep(0.38, 0.78, (maskA * 0.82 + maskB * 0.18) * breakup);
+        // A second, finer field erodes the borders of large masses so the clouds
+        // read as separate formations rather than one transparent coating.
+        float edgeNoise = noise(vUv * 26.0 + vec2(-time * 0.018 * driftSpeed, time * 0.014 * driftSpeed));
+        cloudSignal *= smoothstep(0.22, 0.62, edgeNoise + cloudSignal * 0.48);
         float facing = max(dot(normalize(vNormal), normalize(vViewDirection)), 0.0);
         float rimFade = smoothstep(0.02, 0.32, facing);
-        float highlight = 0.78 + 0.22 * facing;
-        float alpha = cloudSignal * rimFade * opacity;
+        float sunFace = smoothstep(-0.22, 0.42, dot(normalize(vNormal), normalize(sunDirectionView)));
+        float highlight = 0.64 + 0.36 * sunFace;
+        // Keep the night hemisphere quiet so city lights remain anchored to the
+        // surface instead of being veiled by a gray cloud shell.
+        float nightFade = mix(0.3, 1.0, sunFace);
+        float alpha = cloudSignal * rimFade * opacity * nightFade;
         gl_FragColor = vec4(cloudColor * highlight, alpha);
       }
     `,
