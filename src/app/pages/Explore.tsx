@@ -391,7 +391,7 @@ export function Explore() {
             <button
               key={mode}
               type="button"
-              className={`flex min-w-0 flex-col items-center gap-1 rounded px-1 py-2 text-[10px] transition-colors ${selectionMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex h-9 min-w-0 items-center justify-center gap-1.5 rounded px-2 text-xs transition-colors ${selectionMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
               onClick={() => {
                 if (selectionMode === mode) setAreaSelectorOpen((open) => !open);
                 else { setSelectionMode(mode); setAreaSelectorOpen(true); }
@@ -399,9 +399,9 @@ export function Explore() {
               title={label}
               aria-expanded={selectionMode === mode ? areaSelectorOpen : undefined}
             >
-              <Icon className="size-3.5" />
+              <Icon className="size-3.5 shrink-0" />
               <span className="truncate">{label}</span>
-              {selectionMode === mode && <ChevronDown className={`size-3 transition-transform ${areaSelectorOpen ? 'rotate-180' : ''}`} />}
+              {selectionMode === mode && <ChevronDown className={`size-3 shrink-0 transition-transform ${areaSelectorOpen ? 'rotate-180' : ''}`} />}
             </button>
           ))}
         </div>
