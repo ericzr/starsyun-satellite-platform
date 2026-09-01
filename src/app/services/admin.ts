@@ -96,6 +96,7 @@ export async function fetchGlobalCities(country: string, state: string, lang: 'z
   // directory source; resolve a selected item through Nominatim later for a
   // localized name, exact center and boundary geometry.
   try {
+    if (lang === 'zh') throw new Error('prefer localized geocoder');
     const query = new URLSearchParams({ country, state });
     const response = await fetchWithTimeout(`${CITIES_URL}?${query.toString()}`, { headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error('CountriesNow unavailable');
@@ -151,6 +152,39 @@ export async function fetchGlobalCities(country: string, state: string, lang: 'z
   const payload = await response.json() as { error: boolean; data?: string[] };
   if (payload.error || !payload.data?.length) throw new Error('City directory returned no cities');
   return dedupePlaces(payload.data, country, state).map((name) => ({ id: `${country}:${state}:${name}`, name, displayName: name, lat: 0, lon: 0 }));
+}
+
+/** Resolves third-level districts for a selected city/state path via Nominatim. */
+export async function fetchGlobalDistricts(country: string, state: string, city: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity[]> {
+  const query = new URLSearchParams({
+    format: 'jsonv2', addressdetails: '1', namedetails: '1', limit: '50',
+    q: `${city}, ${state}, ${country}`,
+    'accept-language': lang === 'zh' ? 'zh-CN,en' : 'en',
+  });
+  const response = await fetchWithTimeout(`${NOMINATIM_URL}?${query.toString()}`, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error('District directory unavailable');
+  const payload = await response.json() as Array<{
+    place_id: number; display_name: string; name?: string; namedetails?: Record<string, string>;
+    lat: string; lon: string; boundingbox?: string[]; type?: string;
+  }>;
+  const accepted = new Set(['district', 'suburb', 'quarter', 'municipality', 'county', 'town', 'village', 'borough']);
+  const seen = new Set<string>();
+  return payload.map((place) => {
+    const name = lang === 'zh'
+      ? place.namedetails?.['name:zh'] || place.namedetails?.['name:zh-Hans'] || place.name || place.display_name.split(',')[0]
+      : place.name || place.display_name.split(',')[0];
+    const box = place.boundingbox?.map(Number);
+    return {
+      id: String(place.place_id), name, displayName: place.display_name, lat: Number(place.lat), lon: Number(place.lon),
+      bbox: box && box.length === 4 ? [box[2], box[0], box[3], box[1]] as [number, number, number, number] : undefined,
+      administrativeType: place.type,
+    };
+  }).filter((place) => accepted.has(place.administrativeType ?? '') && Number.isFinite(place.lat) && Number.isFinite(place.lon)).filter((place) => {
+    const key = placeKey(place.name);
+    if (!key || seen.has(key) || key === placeKey(city) || key === placeKey(state) || key === placeKey(country)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Resolve a city from the directory only when the user selects it. */

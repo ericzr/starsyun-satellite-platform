@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '../components/ui/
 import { useInquiryDraft } from '../context/InquiryContext';
 import { useCart } from '../context/CartContext';
 import { searchEarthSearch } from '../services/stac';
-import { fetchGlobalCities, fetchGlobalCountries, geocodeAdministrativeArea, geocodeGlobalCity, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
+import { fetchGlobalCities, fetchGlobalCountries, fetchGlobalDistricts, geocodeAdministrativeArea, geocodeGlobalCity, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
 import { toast } from 'sonner';
 
 const LOCAL_COUNTRY_ISO: Record<string, string> = {
@@ -30,7 +30,7 @@ const LOCAL_STATE_LABELS: Record<string, Record<string, string>> = {
     Hunan: '湖南省', 'Inner Mongolia': '内蒙古自治区', Jiangsu: '江苏省', Jiangxi: '江西省', Jilin: '吉林省',
     Liaoning: '辽宁省', Macau: '澳门特别行政区', 'Ningxia Hui Autonomous Region': '宁夏回族自治区', Qinghai: '青海省',
     Shaanxi: '陕西省', Shandong: '山东省', Shanxi: '山西省', Sichuan: '四川省',
-    'Taiwan Province, People\'s Republic of China': '台湾省', 'Tibet Autonomous Region': '西藏自治区',
+    'Taiwan Province, People\'s Republic of China': '台湾省', Taiwan: '台湾省', 'Tibet Autonomous Region': '西藏自治区',
     Xinjiang: '新疆维吾尔自治区', Yunnan: '云南省', Zhejiang: '浙江省',
   },
 };
@@ -124,9 +124,11 @@ export function Explore() {
   const [adminCountry, setAdminCountry] = useState('');
   const [adminLevel1, setAdminLevel1] = useState('');
   const [adminLevel2, setAdminLevel2] = useState('');
+  const [adminLevel3, setAdminLevel3] = useState('');
   const [globalCountries, setGlobalCountries] = useState<GlobalCountry[]>([]);
   const [globalStates, setGlobalStates] = useState<GlobalState[]>([]);
   const [globalCities, setGlobalCities] = useState<GlobalCity[]>([]);
+  const [globalDistricts, setGlobalDistricts] = useState<GlobalCity[]>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const cityRequestRef = useRef(0);
   const adminGeoRequestRef = useRef(0);
@@ -187,6 +189,8 @@ export function Explore() {
       setAdminCountry('');
       setAdminLevel1('');
       setAdminLevel2('');
+      setAdminLevel3('');
+      setGlobalDistricts([]);
       setRemoteBbox(pointSearchBbox(coords));
       return;
     }
@@ -213,6 +217,7 @@ export function Explore() {
           setAdminCountry(countryIso);
           setAdminLevel1(globalSubdivision?.name ?? subdivision.id);
           setAdminLevel2(locality.id);
+          setAdminLevel3('');
           return;
         }
       }
@@ -231,6 +236,8 @@ export function Explore() {
     const country = globalCountries.find((item) => item.iso2 === adminCountry);
     const localCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === adminCountry);
     const selectedState = adminLevel1;
+    setAdminLevel2(city.id);
+    setAdminLevel3('');
     const displayName = cityLabel(city, localCountry, selectedState, lang);
     setSearch(displayName);
     // Keep known business regions responsive while the exact administrative
@@ -257,12 +264,18 @@ export function Explore() {
     setAoi(located.bbox ?? pointSearchBbox([located.lon, located.lat]));
     setFocus({ center: [located.lon, located.lat], zoom: located.boundary ? 10 : 11, key: focusKey.current });
     setRemoteBbox(located.bbox ?? pointSearchBbox([located.lon, located.lat]));
+    if (country) {
+      fetchGlobalDistricts(country.name, selectedState, city.name, lang === 'zh' ? 'zh' : 'en')
+        .then(setGlobalDistricts).catch(() => setGlobalDistricts([]));
+    }
   }
 
   async function selectGlobalState(state: string) {
     const requestId = ++adminGeoRequestRef.current;
     setAdminLevel1(state);
     setAdminLevel2('');
+    setAdminLevel3('');
+    setGlobalDistricts([]);
     setGlobalCities([]);
     setBoundary(null);
     const country = globalCountries.find((item) => item.iso2 === adminCountry);
@@ -392,12 +405,15 @@ export function Explore() {
                   setAdminCountry(event.target.value);
                   setAdminLevel1('');
                   setAdminLevel2('');
+                  setAdminLevel3('');
                   setGlobalCities([]);
+                  setGlobalDistricts([]);
                   setAoi(null);
                   setBoundary(null);
                   setRemoteBbox(null);
                   const country = globalCountries.find((item) => item.iso2 === event.target.value);
-                  setGlobalStates(country?.states ?? localCountry?.subdivisions.map((area) => ({ name: area.name })) ?? []);
+                  const nextLocalCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === event.target.value);
+                  setGlobalStates(country?.states ?? nextLocalCountry?.subdivisions.map((area) => ({ name: area.name })) ?? []);
                 }}
                 className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
               >
@@ -426,6 +442,8 @@ export function Explore() {
                 disabled={!selectedLevel1}
                 onChange={(event) => {
                   setAdminLevel2(event.target.value);
+                  setAdminLevel3('');
+                  setGlobalDistricts([]);
                   const city = globalCities.find((item) => item.id === event.target.value);
                   if (city) void selectGlobalCity(city);
                   else {
@@ -439,6 +457,22 @@ export function Explore() {
                 <option value="">{adminLoading ? (lang === 'zh' ? '加载城市中…' : 'Loading cities…') : t.explore.adminLevel2Placeholder}</option>
                 {globalCities.map((city) => <option key={city.id} value={city.id}>{cityLabel(city, localCountry, adminLevel1, lang)}</option>)}
                 {!globalCities.length && localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.map((area) => <option key={area.id} value={area.id}>{lang === 'zh' ? area.name : area.nameEn}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel3}</span>
+              <select
+                value={adminLevel3}
+                disabled={!adminLevel2}
+                onChange={(event) => {
+                  const district = globalDistricts.find((item) => item.id === event.target.value);
+                  setAdminLevel3(event.target.value);
+                  if (district) void selectGlobalCity(district);
+                }}
+                className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">{globalDistricts.length ? t.explore.adminLevel3Placeholder : (lang === 'zh' ? '暂无三级行政区数据' : 'No third-level areas')}</option>
+                {globalDistricts.map((district) => <option key={district.id} value={district.id}>{cityLabel(district, localCountry, adminLevel1, lang)}</option>)}
               </select>
             </label>
           </div>
