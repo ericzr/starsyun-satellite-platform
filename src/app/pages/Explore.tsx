@@ -452,47 +452,50 @@ export function Explore() {
           <div className="space-y-2">
             <label className="block space-y-1">
               <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.country}</span>{adminCountry && <button type="button" aria-label={lang === 'zh' ? '清除国家或地区' : 'Clear country or region'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminCountry(); }}><X className="size-3" /></button>}</span>
-              <select
-                value={adminCountry}
-                onChange={(event) => {
-                  if (!event.target.value) { clearAdminCountry(); return; }
-                  setAdminCountry(event.target.value);
-                  setAdminLevel1('');
-                  setAdminLevel2('');
-                  setAdminLevel3('');
-                  setGlobalCities([]);
-                  setGlobalDistricts([]);
-                  setAoi(null);
-                  setBoundary(null);
-                  setRemoteBbox(null);
-                  const country = globalCountries.find((item) => item.iso2 === event.target.value);
-                  const nextLocalCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === event.target.value);
-                  setGlobalStates(country?.states ?? nextLocalCountry?.subdivisions.map((area) => ({ name: area.name })) ?? []);
-                }}
-                className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">{t.explore.countryPlaceholder}</option>
-                {(globalCountries.length ? globalCountries : ADMINISTRATIVE_AREAS.map((country) => ({ iso2: LOCAL_COUNTRY_ISO[country.id] ?? country.id, name: lang === 'zh' ? country.name : country.nameEn, states: country.subdivisions.map((area) => ({ name: area.name })), iso3: country.id }))).map((country) => <option key={country.iso2} value={country.iso2}>{countryLabel(country, lang)}</option>)}
-              </select>
+              <div className="relative">
+                <select
+                  value={adminCountry}
+                  onChange={(event) => {
+                    if (!event.target.value) { clearAdminCountry(); return; }
+                    setAdminCountry(event.target.value);
+                    setAdminLevel1('');
+                    setAdminLevel2('');
+                    setAdminLevel3('');
+                    setGlobalCities([]);
+                    setGlobalDistricts([]);
+                    setAoi(null);
+                    setBoundary(null);
+                    setRemoteBbox(null);
+                    const country = globalCountries.find((item) => item.iso2 === event.target.value);
+                    const nextLocalCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === event.target.value);
+                    setGlobalStates(country?.states ?? nextLocalCountry?.subdivisions.map((area) => ({ name: area.name })) ?? []);
+                  }}
+                  className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="">{t.explore.countryPlaceholder}</option>
+                  {(globalCountries.length ? globalCountries : ADMINISTRATIVE_AREAS.map((country) => ({ iso2: LOCAL_COUNTRY_ISO[country.id] ?? country.id, name: lang === 'zh' ? country.name : country.nameEn, states: country.subdivisions.map((area) => ({ name: area.name })), iso3: country.id }))).map((country) => <option key={country.iso2} value={country.iso2}>{countryLabel(country, lang)}</option>)}
+                </select>
+                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+              </div>
             </label>
             {adminCountry && <label className="block space-y-1">
               <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel1}</span>{adminLevel1 && <button type="button" aria-label={lang === 'zh' ? '清除一级行政区' : 'Clear first-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel1(); }}><X className="size-3" /></button>}</span>
-              <select
+              <div className="relative"><select
                 value={adminLevel1}
                 disabled={!selectedCountry}
                 onChange={(event) => {
                   if (!event.target.value) { clearAdminLevel1(); return; }
                   void selectGlobalState(event.target.value);
                 }}
-                className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">{t.explore.adminLevel1Placeholder}</option>
                 {(globalCountries.find((country) => country.iso2 === adminCountry)?.states ?? localCountry?.subdivisions.map((area) => ({ name: area.name, id: area.id })) ?? []).map((area) => <option key={'id' in area ? area.id : area.name} value={area.name}>{stateLabel(area, adminCountry, lang)}</option>)}
-              </select>
+              </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
             </label>}
             {adminCountry && adminLevel1 && <label className="block space-y-1">
               <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel2}</span>{adminLevel2 && <button type="button" aria-label={lang === 'zh' ? '清除二级行政区' : 'Clear second-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel2(); }}><X className="size-3" /></button>}</span>
-              <select
+              <div className="relative"><select
                 value={adminLevel2}
                 disabled={!selectedLevel1}
                 onChange={(event) => {
@@ -508,16 +511,16 @@ export function Explore() {
                     if (region) selectRegion(region);
                   }
                 }}
-                className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">{adminLoading ? (lang === 'zh' ? '加载城市中…' : 'Loading cities…') : t.explore.adminLevel2Placeholder}</option>
                 {globalCities.map((city) => <option key={city.id} value={city.id}>{cityLabel(city, localCountry, adminLevel1, lang)}</option>)}
                 {!globalCities.length && localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.filter((area) => isSecondLevelLocality(area.name)).map((area) => <option key={area.id} value={area.id}>{lang === 'zh' ? area.name : area.nameEn}</option>)}
-              </select>
+              </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
             </label>}
             {adminCountry && adminLevel1 && adminLevel2 && <label className="block space-y-1">
-              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel3}</span>{adminLevel3 && <button type="button" aria-label={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel3(); }}><X className="size-3" /></button>}</span>
-              <select
+              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel3}</span><button type="button" aria-label={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'} title={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel3(); }}><X className="size-3" /></button></span>
+              <div className="relative"><select
                 value={adminLevel3}
                 disabled={!adminLevel2}
                 onChange={(event) => {
@@ -526,11 +529,11 @@ export function Explore() {
                   setAdminLevel3(event.target.value);
                   if (district) void selectGlobalCity(district, 'district');
                 }}
-                className="h-8 w-full rounded-md border border-border bg-input-background px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">{globalDistricts.length ? t.explore.adminLevel3Placeholder : (lang === 'zh' ? '暂无三级行政区数据' : 'No third-level areas')}</option>
                 {globalDistricts.map((district) => <option key={district.id} value={district.id}>{cityLabel(district, localCountry, adminLevel1, lang)}</option>)}
-              </select>
+              </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
             </label>}
           </div>
         )}
