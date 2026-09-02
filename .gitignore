@@ -1,12 +1,14 @@
 # Dependencies
 node_modules
 dist
+dist-server
 build
 
 # Environment
 .env
 .env.local
 .env.*.local
+deploy/env.runtime
 
 # Logs
 *.log

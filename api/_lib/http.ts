@@ -16,7 +16,7 @@ export function setCors(req: ApiRequest, res: ApiResponse) {
   const configured = process.env.ALLOWED_ORIGINS?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? [];
   const requestOrigin = req.headers.origin;
   const origin = Array.isArray(requestOrigin) ? requestOrigin[0] : requestOrigin;
-  if (configured.length === 0) {
+  if (configured.length === 0 && process.env.NODE_ENV !== 'production') {
     res.setHeader('Access-Control-Allow-Origin', '*');
   } else if (origin && configured.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
@@ -37,6 +37,6 @@ export function sendError(res: ApiResponse, error: unknown) {
   const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
     ? error.status
     : 500;
-  const message = error instanceof Error ? error.message : 'internal server error';
+  const message = status === 500 ? 'internal server error' : error instanceof Error ? error.message : 'internal server error';
   res.status(status).json({ error: message });
 }

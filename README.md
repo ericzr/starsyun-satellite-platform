@@ -140,6 +140,18 @@ cp .env.example .env
 
 ## 部署
 
+### 阿里云 ECS / 自有服务器
+
+项目已提供可自托管的 Node 运行入口，同时承载 Vite 前端和 `/api/*` 业务网关：
+
+```bash
+npm ci
+npm run build:production
+NODE_ENV=production HOST=127.0.0.1 PORT=3000 npm start
+```
+
+生产环境应由 Nginx 处理 TLS 并反向代理到 `127.0.0.1:3000`。完整的 ECS 现状、安全门禁、systemd、Nginx、原子发布与回滚步骤见 [ECS 迁移手册](docs/ECS_DEPLOYMENT.md)。
+
 ### Vercel
 
 ```bash
@@ -152,43 +164,19 @@ vercel
 
 正式环境建议在 Vercel 配置 `VITE_STAC_GATEWAY_URL=/api/stac`，让真实数据检索经过服务端网关。详见 [Provider Gateway 文档](docs/PROVIDER_GATEWAY.md)。
 
-服务器迁移、环境变量分层、数据库、支付和上线门禁请参阅 [正式部署准备清单](docs/DEPLOYMENT_READINESS.md)。
+服务器迁移、环境变量分层、数据库、支付和上线门禁请参阅 [正式部署准备清单](docs/DEPLOYMENT_READINESS.md)。整体架构边界、当前真实程度和后续主线见 [架构梳理与上线路线图](docs/ARCHITECTURE_AND_ROADMAP.md)。
 
 ### Docker
 
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 4173
-CMD ["npm", "run", "preview"]
+```bash
+cp deploy/env.runtime.example deploy/env.runtime
+docker build -t starsyun:local .
+docker run --rm -p 127.0.0.1:3000:3000 --env-file deploy/env.runtime starsyun:local
 ```
 
 ### Nginx
 
-构建后将 `dist/` 目录部署到 Nginx，配置示例：
-
-```nginx
-server {
-    listen 80;
-    server_name starsyun.com;
-    root /var/www/starsyun/dist;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # 缓存静态资源
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-}
-```
+Nginx 仅作为 TLS 入口和反向代理，转发到本机 `127.0.0.1:3000`；不再用单纯静态目录方式绕过 `/api/*`。可直接使用 [Nginx 配置模板](deploy/nginx/starsyun.conf)。
 
 ## 性能优化
 

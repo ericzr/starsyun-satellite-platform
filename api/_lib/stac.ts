@@ -78,6 +78,11 @@ export function parseSearchRequest(body: StacRequest) {
 
 export function checkRateLimit(identity: string) {
   const now = Date.now();
+  if (requests.size > 10_000) {
+    for (const [key, value] of requests) {
+      if (now - value.startedAt >= RATE_WINDOW_MS) requests.delete(key);
+    }
+  }
   const existing = requests.get(identity);
   if (!existing || now - existing.startedAt >= RATE_WINDOW_MS) {
     requests.set(identity, { startedAt: now, count: 1 });
@@ -93,6 +98,12 @@ function cacheKey(input: ReturnType<typeof parseSearchRequest>) {
 
 export async function searchEarthSearch(input: ReturnType<typeof parseSearchRequest>) {
   const key = cacheKey(input);
+  if (cache.size > 1_000) {
+    const now = Date.now();
+    for (const [cacheEntryKey, value] of cache) {
+      if (value.expiresAt <= now) cache.delete(cacheEntryKey);
+    }
+  }
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.payload;
 

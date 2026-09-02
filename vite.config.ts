@@ -17,7 +17,7 @@ function figmaAssetResolver() {
 }
 
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS ? '/starsyun-satellite-platform/' : '/',
+  base: process.env.STARSYUN_DEPLOY_TARGET === 'github-pages' ? '/starsyun-satellite-platform/' : '/',
   plugins: [
     figmaAssetResolver(),
     // The React and Tailwind plugins are both required for Make, even if

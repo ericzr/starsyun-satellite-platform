@@ -1,0 +1,26 @@
+[Unit]
+Description=StarSyun satellite data platform
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=starsyun
+Group=starsyun
+WorkingDirectory=/srv/starsyun/current
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+EnvironmentFile=/etc/starsyun/starsyun.env
+ExecStart=/usr/bin/node /srv/starsyun/current/dist-server/server.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/starsyun
+
+[Install]
+WantedBy=multi-user.target

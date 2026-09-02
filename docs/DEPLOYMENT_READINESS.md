@@ -5,7 +5,7 @@
 - 前端：Vite + React，静态产物部署到 GitHub Pages 或 Vercel。
 - 地图：MapLibre，Carto / OpenFreeMap / OSM 底图，NASA、Sentinel-2、Esri 等公开影像图层。
 - 数据查询：前端可直连 Earth Search；生产环境建议统一走 `/api/stac` 网关。
-- 服务端：Vercel Functions，负责 STAC 查询、询价、报价、订单、认证和 Stripe webhook。
+- 服务端：同一组 API 处理器可运行在 Vercel Functions，也可通过 `server/index.ts` 运行在自有 Node/Nginx 服务器，负责 STAC 查询、询价、报价、订单、认证和 Stripe webhook。
 - 持久化：Supabase migrations `001` 至 `004`，保存询价、报价、订单和支付意图。
 
 ## 上线前必须完成
@@ -45,10 +45,10 @@
 
 ## 推荐迁移顺序
 
-1. 创建生产 Supabase、Vercel 项目和自定义域名。
-2. 执行数据库迁移，配置服务端密钥和 CORS 白名单。
-3. 部署 API 网关并用测试账号跑完整询价到订单链路。
-4. 接入 Stripe 测试 webhook，完成幂等和失败重试验证。
-5. 将 Earth Search、Sentinel-2 等公开源纳入监控，再逐个接入商业供应商。
-6. 通过 CI 门禁后切换 DNS，保留 GitHub Pages 作为只读演示和回滚入口。
-
+1. 清理并备份 ECS，确认不覆盖现有站点；按 [ECS 迁移手册](./ECS_DEPLOYMENT.md) 建立独立用户、目录、systemd 服务和 Nginx vhost。
+2. 创建生产 Supabase 项目和自定义域名。
+3. 执行数据库迁移，配置服务端密钥和 CORS 白名单。
+4. 部署 API 网关并用测试账号跑完整询价到订单链路。
+5. 接入 Stripe 测试 webhook，完成幂等和失败重试验证。
+6. 将 Earth Search、Sentinel-2 等公开源纳入监控，再逐个接入商业供应商。
+7. 通过 CI 门禁后切换 DNS，保留 GitHub Pages 作为只读演示和回滚入口。
