@@ -135,3 +135,39 @@ export async function getCustomerOrder(orderId: string, userId: string) {
   const rows = (await response.json()) as Row[];
   return rows[0] ? mapOrder(rows[0]) : null;
 }
+
+/** Server-side order lookup used by the admin delivery workflow. */
+export async function getOrderById(orderId: string) {
+  validId(orderId, 'order id');
+  const response = await rest(`orders?select=*&id=eq.${encodeURIComponent(orderId)}&limit=1`);
+  const rows = (await response.json()) as Row[];
+  return rows[0] ? mapOrder(rows[0]) : null;
+}
+
+export async function listOrders() {
+  const response = await rest('orders?select=*&order=created_at.desc&limit=500');
+  return ((await response.json()) as Row[]).map(mapOrder);
+}
+
+/** Only fulfillment-safe transitions are exposed to administrators. */
+export async function updateOrderDeliveryStatus(orderId: string, next: 'fulfillment' | 'delivered') {
+  const current = await getOrderById(orderId);
+  if (!current) throw new GatewayError(404, 'order not found');
+  if (current.status === 'cancelled' || current.status === 'pending_payment') {
+    throw new GatewayError(409, `order cannot transition from ${current.status}`);
+  }
+  if (next === 'fulfillment' && current.status === 'delivered') return current;
+  if (next === 'delivered' && !['paid', 'fulfillment', 'delivered'].includes(current.status)) {
+    throw new GatewayError(409, `order cannot transition from ${current.status}`);
+  }
+  const patch: Record<string, unknown> = { status: next };
+  if (next === 'delivered') patch.delivered_at = current.deliveredAt ?? new Date().toISOString();
+  const response = await rest(`orders?id=eq.${encodeURIComponent(orderId)}&select=*`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+    headers: { Prefer: 'return=representation' },
+  });
+  const rows = (await response.json()) as Row[];
+  if (!rows[0]) throw new GatewayError(404, 'order not found');
+  return mapOrder(rows[0]);
+}

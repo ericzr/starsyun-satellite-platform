@@ -3,14 +3,14 @@ import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Download, Package } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useCart } from '../context/CartContext';
-import { getCustomerOrder, type ServerOrder } from '../lib/orders';
+import { getCustomerOrder, loadDeliveryAssets, type DeliveryAsset, type ServerOrder } from '../lib/orders';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { fmtCny, fmtCnyEn } from '../lib/pricing';
 
 export function OrderDetail() {
   const { id } = useParams();
-  const { t, lang } = useI18n();
+  const { lang } = useI18n();
   const navigate = useNavigate();
   const { getOrder } = useCart();
 
@@ -213,6 +213,25 @@ export function OrderDetail() {
 }
 
 function ServerOrderDetail({ order, lang, navigate }: { order: ServerOrder; lang: string; navigate: (to: string) => void }) {
+  const [assets, setAssets] = useState<DeliveryAsset[]>([]);
+  const [assetsLoading, setAssetsLoading] = useState(order.status === 'delivered');
+  const [assetsError, setAssetsError] = useState(false);
+
+  useEffect(() => {
+    if (order.status !== 'delivered') {
+      setAssets([]);
+      setAssetsLoading(false);
+      return;
+    }
+    let active = true;
+    setAssetsLoading(true);
+    loadDeliveryAssets(order.id)
+      .then((next) => active && setAssets(next))
+      .catch(() => active && setAssetsError(true))
+      .finally(() => active && setAssetsLoading(false));
+    return () => { active = false; };
+  }, [order.id, order.status]);
+
   const status = {
     pending_payment: { zh: '待支付', en: 'Pending payment', variant: 'secondary' as const },
     paid: { zh: '已支付', en: 'Paid', variant: 'default' as const },
@@ -246,8 +265,49 @@ function ServerOrderDetail({ order, lang, navigate }: { order: ServerOrder; lang
             <div className="flex justify-between"><span className="text-muted-foreground">{lang === 'zh' ? '支付状态' : 'Payment status'}</span><span>{order.paymentStatus}</span></div>
             <div className="mt-3 flex justify-between"><span className="text-muted-foreground">{lang === 'zh' ? '创建时间' : 'Created'}</span><span>{new Date(order.createdAt).toLocaleString(lang)}</span></div>
           </section>
+          {order.status === 'delivered' && (
+            <section className="rounded-lg border border-border bg-card p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="tech-label text-xs text-muted-foreground">{lang === 'zh' ? '交付文件' : 'Delivery files'}</h3>
+                <span className="text-xs text-muted-foreground">{assets.length}</span>
+              </div>
+              {assetsLoading ? (
+                <p className="mt-4 text-sm text-muted-foreground">{lang === 'zh' ? '加载文件中…' : 'Loading files…'}</p>
+              ) : assetsError ? (
+                <p className="mt-4 text-sm text-destructive">{lang === 'zh' ? '交付文件暂时不可用' : 'Delivery files are temporarily unavailable'}</p>
+              ) : assets.length === 0 ? (
+                <p className="mt-4 text-sm text-muted-foreground">{lang === 'zh' ? '文件准备中' : 'Files are being prepared'}</p>
+              ) : (
+                <div className="mt-4 space-y-2">
+                  {assets.map((asset) => (
+                    <div key={asset.id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-panel p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm">{asset.fileName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{asset.contentType} · {formatBytes(asset.sizeBytes)}</p>
+                      </div>
+                      <Button asChild size="sm" variant="outline" className="shrink-0">
+                        <a href={`/api/orders/${encodeURIComponent(order.id)}/delivery-assets/${encodeURIComponent(asset.id)}/download`} target="_blank" rel="noreferrer">
+                          <Download className="size-3.5" />
+                          {lang === 'zh' ? '下载' : 'Download'}
+                        </a>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="mt-3 text-xs text-muted-foreground">{lang === 'zh' ? '下载链接仅短时有效，点击下载时实时签发。' : 'Links are short-lived and issued when you download.'}</p>
+            </section>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+function formatBytes(value?: number) {
+  if (value == null || !Number.isFinite(value)) return '—';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }

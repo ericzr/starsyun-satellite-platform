@@ -12,6 +12,11 @@ import inquiries from '../api/inquiries/index';
 import myInquiries from '../api/inquiries/mine';
 import orderDetail from '../api/orders/[id]';
 import paymentIntent from '../api/orders/[id]/payment-intent';
+import deliveryAssets from '../api/orders/[id]/delivery-assets';
+import deliveryAsset from '../api/orders/[id]/delivery-assets/[assetId]';
+import deliveryDownload from '../api/orders/[id]/delivery-assets/[assetId]/download';
+import deliveryStatus from '../api/orders/[id]/delivery-status';
+import orders from '../api/orders/index';
 import myOrders from '../api/orders/mine';
 import quoteDetail from '../api/quotes/[id]';
 import acceptQuote from '../api/quotes/[id]/accept';
@@ -29,6 +34,7 @@ interface ApiRoute {
   handler: Handler;
   rawBody?: boolean;
   parameter?: string;
+  parameters?: Record<string, number>;
 }
 
 const routes: ApiRoute[] = [
@@ -44,8 +50,13 @@ const routes: ApiRoute[] = [
   { pattern: /^\/api\/quotes\/([^/]+)\/?$/, handler: quoteDetail, parameter: 'id' },
   { pattern: /^\/api\/quotes\/?$/, handler: quotes },
   { pattern: /^\/api\/orders\/mine\/?$/, handler: myOrders },
+  { pattern: /^\/api\/orders\/([^/]+)\/delivery-assets\/([^/]+)\/?$/, handler: deliveryAsset, parameters: { id: 1, assetId: 2 } },
+  { pattern: /^\/api\/orders\/([^/]+)\/delivery-assets\/([^/]+)\/download\/?$/, handler: deliveryDownload, parameters: { id: 1, assetId: 2 } },
+  { pattern: /^\/api\/orders\/([^/]+)\/delivery-assets\/?$/, handler: deliveryAssets, parameter: 'id' },
+  { pattern: /^\/api\/orders\/([^/]+)\/delivery-status\/?$/, handler: deliveryStatus, parameter: 'id' },
   { pattern: /^\/api\/orders\/([^/]+)\/payment-intent\/?$/, handler: paymentIntent, parameter: 'id' },
   { pattern: /^\/api\/orders\/([^/]+)\/?$/, handler: orderDetail, parameter: 'id' },
+  { pattern: /^\/api\/orders\/?$/, handler: orders },
   { pattern: /^\/api\/stac\/item\/([^/]+)\/?$/, handler: stacItem, parameter: 'id' },
   { pattern: /^\/api\/stac\/search\/?$/, handler: stacSearch },
   { pattern: /^\/api\/webhooks\/stripe\/?$/, handler: stripeWebhook, rawBody: true },
@@ -148,6 +159,9 @@ async function dispatchApi(request: IncomingMessage, response: ServerResponse, u
     if (!match) continue;
     const query = queryObject(url);
     if (route.parameter && match[1]) query[route.parameter] = decodeURIComponent(match[1]);
+    for (const [name, index] of Object.entries(route.parameters ?? {})) {
+      if (match[index]) query[name] = decodeURIComponent(match[index]);
+    }
     const apiRequest: ApiRequest = {
       method: request.method,
       headers: request.headers,

@@ -16,7 +16,7 @@
    - 生产环境禁止设置 `VITE_ENABLE_MOCK_DATA=true`，并确认管理员密码哈希已替换示例值。
 
 2. **数据库迁移与权限**
-   - 在生产 Supabase 项目按顺序执行 `001` 至 `005` 迁移；`005` 仅保存 COS 交付对象元数据，不保存影像二进制。
+   - 在生产 Supabase 项目按顺序执行 `001` 至 `006` 迁移；`005` 保存 COS 交付对象元数据，`006` 保存签名下载审计，不保存影像二进制。当前应用已接入 `/api/orders`、`/api/orders/:id/delivery-assets`、`/api/orders/:id/delivery-status` 和签名下载接口。
    - 检查 RLS、索引、唯一约束和订单状态流转；备份策略至少按日执行。
    - 管理员接口必须验证 HttpOnly 会话，不能使用前端 localStorage 作为权限依据。
 
