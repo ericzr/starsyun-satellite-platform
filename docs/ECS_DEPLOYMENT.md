@@ -99,9 +99,11 @@ sudo systemctl enable starsyun
 sudo install -m 0644 deploy/nginx/starsyun.conf /etc/nginx/sites-available/starsyun.conf
 sudo ln -s /etc/nginx/sites-available/starsyun.conf /etc/nginx/sites-enabled/starsyun.conf
 sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d starsyun.com -d www.starsyun.com --redirect
 ```
 
-Nginx 模板假设证书位于 `/etc/letsencrypt/live/starsyun.com/`。在 DNS 生效和证书存在前，不要启用 443 server block。
+Nginx 模板先以 HTTP 启动并提供 ACME 验证路径；确认 DNS 和 80 端口可访问后，由 Certbot 自动生成并维护 443 配置。
 
 ## 原子发布与回滚
 
