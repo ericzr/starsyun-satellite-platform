@@ -140,7 +140,7 @@ cp .env.example .env
 
 ## 部署
 
-### 阿里云 ECS / 自有服务器
+### 腾讯云 CVM / 自有服务器
 
 项目已提供可自托管的 Node 运行入口，同时承载 Vite 前端和 `/api/*` 业务网关：
 
@@ -164,7 +164,7 @@ vercel
 
 正式环境建议在 Vercel 配置 `VITE_STAC_GATEWAY_URL=/api/stac`，让真实数据检索经过服务端网关。详见 [Provider Gateway 文档](docs/PROVIDER_GATEWAY.md)。
 
-服务器迁移、环境变量分层、数据库、支付和上线门禁请参阅 [正式部署准备清单](docs/DEPLOYMENT_READINESS.md)。整体架构边界、当前真实程度和后续主线见 [架构梳理与上线路线图](docs/ARCHITECTURE_AND_ROADMAP.md)。
+服务器迁移、环境变量分层、数据库、支付和上线门禁请参阅 [正式部署准备清单](docs/DEPLOYMENT_READINESS.md)。当前服务器上线后的完整执行顺序见 [正式上线主线任务](docs/PRODUCTION_LAUNCH_PLAN.md)，整体架构边界和产品路线见 [架构梳理与上线路线图](docs/ARCHITECTURE_AND_ROADMAP.md)。
 
 ### Docker
 

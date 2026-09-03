@@ -1,4 +1,4 @@
-# StarSyun 阿里云 ECS 迁移手册
+# StarSyun 腾讯云 CVM / 自有服务器部署手册
 
 ## 目标架构
 
@@ -6,7 +6,7 @@
 Internet
    |
    v
-Aliyun Security Group (80/443 only)
+Tencent Cloud Security Group (80/443 only)
    |
    v
 Nginx + TLS
@@ -19,35 +19,37 @@ StarSyun Node service (127.0.0.1:3000)
    |-- /api/inquiries, /api/quotes, /api/orders
    `-- /api/webhooks/stripe
              |
-             +-- Supabase Auth/PostgreSQL
+             +-- Supabase Auth/PostgreSQL（当前项目：新加坡）
              +-- Earth Search and satellite providers
              `-- Stripe
 ```
 
 `server/index.ts` 将原来的 Vercel Functions 处理器适配为标准 Node HTTP 服务，同时提供 SPA 路由回退、静态资源缓存、请求体限制、基础安全头和健康检查。服务器不需要 Vercel CLI，也不应使用 `vite preview` 承载正式流量。
 
-## 已核对的 ECS 现状（2026-09-02）
+## 已核对的生产服务器现状（2026-09-04）
 
-- 实例：`i-uf6e4n1v7umuhql85l8k`，华东 2（上海），运行中。
-- 系统：Ubuntu 22.04 64 位，2 vCPU / 4 GiB，公网带宽 5 Mbps。
-- 公网 IP：`8.153.173.207`。
-- 系统盘：40 GiB ESSD，控制台显示已使用 94.91%，这是当前最高优先级阻断项。
-- 已有 Nginx 1.18 监听 80/443，IP 首页正在提供名为“中方信数据”的现有前端，迁移时不得覆盖默认站点或已有资产。
-- 安全组已向公网放行 80/443；22 仅对现有 IP 白名单放行，当前工作端无法直连 SSH。
-- Node.js 和 Git 扩展已安装，但 Node 实际版本仍需在服务器内确认。本项目生产基线为 Node.js `>=22.13.0`。
-- `starsyun.com`、`www.starsyun.com` 和 `api.starsyun.com` 当前未解析到该实例。
+- 云厂商：腾讯云 CVM，新加坡地域。
+- 公网入口：`https://starsyun.com`，Nginx 终止 TLS 并反向代理到 `127.0.0.1:3000`。
+- 应用：Ubuntu + Node.js 22 + systemd，运行用户为 `starsyun`。
+- 安全组：公网仅开放 80/443；SSH 22 使用管理 IP 白名单；应用、数据库和 Redis 端口不对公网开放。
+- 数据底座：Supabase Pro，新加坡 AWS 区域；服务端使用新 API key 模式。
+- 发布目录：`/srv/starsyun/releases/<git-sha>`，`/srv/starsyun/current` 为当前版本软链接。
+- 线上探针：`/healthz` 与 `/readyz` 已通过；Stripe 尚未启用，属于后续支付主线。
+
+> 本文不记录服务器密码、Supabase 密钥、支付密钥或供应商凭据。运行时秘密只允许出现在服务器的 `/etc/starsyun/starsyun.env`。
 
 ## 迁移门禁
 
 在这些条件全部满足前，不切换正式流量：
 
-1. 先为系统盘创建快照，再清理日志、旧构建、包缓存或无用镜像；目标使用率低于 70%。
-2. 盘点当前 Nginx vhost、系统服务、进程管理器、监听端口和日志占用，为“中方信数据”留存可回滚备份。
-3. 将当前固定出口 IP 加入 SSH 22 白名单，或全程使用 Workbench/云助手；不要将 22 开放给 `0.0.0.0/0`。
-4. 确定正式域名、DNS 和备案/合规路径，再申请 TLS 证书。
-5. 创建生产 Supabase 项目，执行 `supabase/migrations/001` 至 `004`，完成备份和恢复验证。
+1. 为系统盘创建快照，确认日志、旧 release 与临时文件不会持续增长。
+2. 盘点 Nginx vhost、systemd 服务、监听端口和日志占用，保留现有站点的可回滚备份。
+3. 将管理出口 IP 加入 SSH 22 白名单；不要把 22 开放给 `0.0.0.0/0` 或 `::/0`。
+4. 确认域名 DNS、TLS、备案和跨境访问合规路径。
+5. 在生产 Supabase 项目按顺序执行所有迁移，并完成备份/恢复验证。
 6. 配置服务端密钥，并确保真实值只存在 `/etc/starsyun/starsyun.env`。
 7. 用测试账号跑通注册/登录、询价、报价、接受报价、订单和支付 webhook 闭环。
+8. 接入 COS 后，再把交付文件、签名下载和下载审计加入上线验收。
 
 ## 构建发布包
 
