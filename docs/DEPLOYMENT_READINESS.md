@@ -11,7 +11,7 @@
 ## 上线前必须完成
 
 1. **环境变量分层**
-   - Vercel 仅配置服务端密钥：`SUPABASE_SERVICE_ROLE_KEY`、`AUTH_SESSION_SECRET`、`STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`。
+   - 服务端仅配置服务端密钥：`SUPABASE_SECRET_KEY`、`AUTH_SESSION_SECRET`、`STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`。
    - 前端只配置公开地址和公开地图凭据：`VITE_STAC_GATEWAY_URL`、`VITE_INQUIRY_API_URL`、地图样式和瓦片地址。
    - 生产环境禁止设置 `VITE_ENABLE_MOCK_DATA=true`，并确认管理员密码哈希已替换示例值。
 

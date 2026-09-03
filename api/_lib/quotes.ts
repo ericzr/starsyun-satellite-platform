@@ -1,5 +1,6 @@
 import { GatewayError } from './stac';
 import { persistenceConfig } from './inquiries';
+import { supabaseApiHeaders } from './supabase';
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'cancelled';
 export type QuoteCurrency = 'CNY' | 'USD' | 'EUR' | 'AED';
@@ -97,8 +98,7 @@ async function rest(path: string, init: RequestInit = {}) {
   const response = await fetch(`${url}/rest/v1/${path}`, {
     ...init,
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+      ...supabaseApiHeaders(key),
       Accept: 'application/json',
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers ?? {}),

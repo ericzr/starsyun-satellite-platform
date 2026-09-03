@@ -1,6 +1,7 @@
 import { GatewayError } from './stac';
 import { persistenceConfig } from './inquiries';
 import type { OrderRecord, PaymentProvider } from './orders';
+import { supabaseApiHeaders } from './supabase';
 
 export interface PaymentIntentResult {
   provider: PaymentProvider;
@@ -59,8 +60,7 @@ async function patchOrderPayment(orderId: string, intent: PaymentIntentResult) {
   const response = await fetch(`${url}/rest/v1/orders?id=eq.${encodeURIComponent(orderId)}&select=*`, {
     method: 'PATCH',
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+      ...supabaseApiHeaders(key),
       Accept: 'application/json',
       'Content-Type': 'application/json',
       Prefer: 'return=representation',
@@ -107,8 +107,7 @@ export async function updatePaymentFromWebhook(orderId: string, paymentIntentId:
   const response = await fetch(`${url}/rest/v1/orders?${query}`, {
     method: 'PATCH',
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+      ...supabaseApiHeaders(key),
       Accept: 'application/json',
       'Content-Type': 'application/json',
       Prefer: 'return=representation',

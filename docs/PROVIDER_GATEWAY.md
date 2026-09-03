@@ -23,8 +23,8 @@ VITE_STAC_GATEWAY_URL=/api/stac
 VITE_INQUIRY_API_URL=/api/inquiries
 ALLOWED_ORIGINS=https://starsyun.com,https://www.starsyun.com
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=replace-with-server-only-service-role-key
-SUPABASE_ANON_KEY=replace-with-supabase-anon-key-for-customer-auth
+SUPABASE_SECRET_KEY=replace-with-server-only-secret-key
+SUPABASE_PUBLISHABLE_KEY=replace-with-supabase-publishable-key-for-customer-auth
 ADMIN_EMAILS=ops@starsyun.com
 ADMIN_PASSWORD_SHA256=replace-with-sha256-of-admin-password
 AUTH_SESSION_SECRET=replace-with-a-random-32-byte-secret
@@ -32,7 +32,7 @@ AUTH_SESSION_SECRET=replace-with-a-random-32-byte-secret
 
 `VITE_STAC_GATEWAY_URL` 会被编译进前端，只填写站内路径或受信任的 API 域名。`ALLOWED_ORIGINS` 是服务端变量，不能使用 `VITE_` 前缀，也不能把供应商密钥放入前端变量。
 
-询价表定义在 `supabase/migrations/001_create_inquiries.sql`。先在目标 Supabase 项目执行迁移，再把 `SUPABASE_URL` 与 `SUPABASE_SERVICE_ROLE_KEY` 配置到 Vercel。Service role 只允许存在于 Vercel 的服务端环境变量，绝不能放入 GitHub Pages、`.env.production` 或任意 `VITE_*` 变量。
+询价表定义在 `supabase/migrations/001_create_inquiries.sql`。先在目标 Supabase 项目执行迁移，再把 `SUPABASE_URL` 与 `SUPABASE_SECRET_KEY` 配置到服务端。Secret key 只允许存在于服务端环境变量，绝不能放入 GitHub Pages、`.env.production` 或任意 `VITE_*` 变量。
 
 报价表定义在 `supabase/migrations/002_create_quotes.sql`，执行迁移时需要先完成询价表迁移。报价按 `inquiry_id + version` 唯一，只有 `sent` 和 `accepted` 状态会出现在客户侧；接受报价后，下一阶段再生成订单和支付意图。
 
@@ -40,7 +40,7 @@ AUTH_SESSION_SECRET=replace-with-a-random-32-byte-secret
 
 管理端通过 `POST /api/auth/login` 建立 8 小时的 HttpOnly 会话，随后才可读取或更新服务端询价。设置管理员环境变量时，`ADMIN_EMAILS` 是逗号分隔的运营邮箱白名单；`ADMIN_PASSWORD_SHA256` 可由 `printf %s 'your-password' | shasum -a 256` 生成；`AUTH_SESSION_SECRET` 应使用 `openssl rand -hex 32` 生成。三者均为服务端密钥，不能放入前端变量或提交到仓库。
 
-普通客户登录和注册也通过 `/api/auth/login`、`/api/auth/register` 进入 Supabase Auth。需要把 `SUPABASE_ANON_KEY` 配置在服务端环境中；它不是 service role，但仍不应写入本项目的 `VITE_*` 变量。开启邮箱确认时，注册接口会返回 `202`，用户完成邮箱确认后再登录。
+普通客户登录和注册也通过 `/api/auth/login`、`/api/auth/register` 进入 Supabase Auth。需要把 `SUPABASE_PUBLISHABLE_KEY` 配置在服务端环境中；它不是高权限密钥，但本项目仍统一通过服务端使用，不写入 `VITE_*` 变量。开启邮箱确认时，注册接口会返回 `202`，用户完成邮箱确认后再登录。
 
 这是一层用于首个运营后台的部署边界。正式规模化上线前，应替换为企业 SSO 或 Supabase Auth，并在管理操作中写入操作者审计日志。
 

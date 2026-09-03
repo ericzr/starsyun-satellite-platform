@@ -1,6 +1,7 @@
 import { GatewayError } from './stac';
 import { persistenceConfig } from './inquiries';
 import type { QuoteRecord } from './quotes';
+import { supabaseApiHeaders } from './supabase';
 
 export type OrderStatus = 'pending_payment' | 'paid' | 'fulfillment' | 'delivered' | 'cancelled';
 export type PaymentStatus = 'unpaid' | 'processing' | 'paid' | 'refunded' | 'failed';
@@ -66,8 +67,7 @@ async function rest(path: string, init: RequestInit = {}) {
   const response = await fetch(`${url}/rest/v1/${path}`, {
     ...init,
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+      ...supabaseApiHeaders(key),
       Accept: 'application/json',
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers ?? {}),

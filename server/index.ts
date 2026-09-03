@@ -199,7 +199,11 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/healthz') return sendJson(response, 200, { status: 'ok' });
     if (url.pathname === '/readyz') {
       const services = {
-        supabase: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_ANON_KEY),
+        supabase: Boolean(
+          process.env.SUPABASE_URL
+          && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)
+          && (process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY),
+        ),
         adminAuth: Boolean(process.env.ADMIN_EMAILS && process.env.ADMIN_PASSWORD_SHA256 && process.env.AUTH_SESSION_SECRET),
         stripe: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET),
       };

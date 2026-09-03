@@ -1,4 +1,5 @@
 import { GatewayError } from './stac';
+import { supabaseApiHeaders } from './supabase';
 
 export type InquiryType = 'history' | 'tasking' | 'analysis';
 export type InquiryStatus = 'submitted' | 'pending' | 'quoting' | 'quoted' | 'confirmed';
@@ -112,7 +113,7 @@ function recordFromRow(row: InquiryRow): InquiryRecord {
 
 export function persistenceConfig() {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new GatewayError(503, 'inquiry persistence is not configured');
   return { url, key };
 }
@@ -143,8 +144,7 @@ export async function insertInquiry(record: InquiryRecord) {
   const response = await fetch(`${url}/rest/v1/inquiries`, {
     method: 'POST',
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+      ...supabaseApiHeaders(key),
       'Content-Type': 'application/json',
       Prefer: 'return=representation',
     },
@@ -163,7 +163,7 @@ export async function insertInquiry(record: InquiryRecord) {
 export async function listInquiries() {
   const { url, key } = persistenceConfig();
   const response = await fetch(`${url}/rest/v1/inquiries?select=*&order=created_at.desc&limit=500`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' },
+    headers: { ...supabaseApiHeaders(key), Accept: 'application/json' },
   });
   if (!response.ok) throw new GatewayError(502, `inquiry persistence failed (${response.status})`);
   const rows = (await response.json()) as InquiryRow[];
@@ -174,7 +174,7 @@ export async function listUserInquiries(userId: string) {
   if (!/^[0-9a-f-]{20,80}$/i.test(userId)) throw new GatewayError(400, 'invalid customer id');
   const { url, key } = persistenceConfig();
   const response = await fetch(`${url}/rest/v1/inquiries?select=*&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=100`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' },
+    headers: { ...supabaseApiHeaders(key), Accept: 'application/json' },
   });
   if (!response.ok) throw new GatewayError(502, `inquiry persistence failed (${response.status})`);
   const rows = (await response.json()) as InquiryRow[];
@@ -187,8 +187,7 @@ export async function updateInquiryStatus(id: string, status: InquiryStatus) {
   const response = await fetch(`${url}/rest/v1/inquiries?id=eq.${encodeURIComponent(id)}&select=*`, {
     method: 'PATCH',
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+      ...supabaseApiHeaders(key),
       'Content-Type': 'application/json',
       Prefer: 'return=representation',
     },

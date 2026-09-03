@@ -1,5 +1,6 @@
 import { GatewayError } from './stac';
 import type { ApiRequest, ApiResponse } from './http';
+import { supabaseApiHeaders } from './supabase';
 
 const ACCESS_COOKIE = 'starsyun_customer_access';
 const REFRESH_COOKIE = 'starsyun_customer_refresh';
@@ -26,15 +27,14 @@ interface SupabaseAuthResponse {
 
 function config() {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
-  const key = process.env.SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY;
   if (!url || !key) throw new GatewayError(503, 'customer authentication is not configured');
   return { url, key };
 }
 
 function requestHeaders(key: string, token?: string) {
   return {
-    apikey: key,
-    Authorization: token ? `Bearer ${token}` : `Bearer ${key}`,
+    ...supabaseApiHeaders(key, token),
     'Content-Type': 'application/json',
   };
 }
