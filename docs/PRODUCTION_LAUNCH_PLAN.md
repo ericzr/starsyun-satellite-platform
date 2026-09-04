@@ -7,7 +7,7 @@
 ## 当前基线（已完成）
 
 - 腾讯云新加坡 Node/Nginx 服务已运行，正式域名 HTTPS 可访问。
-- Supabase Pro 新加坡项目已连接，生产迁移 `001` 至 `004` 已执行。
+- Supabase 新加坡项目已连接，生产迁移 `001` 至 `006` 已执行。
 - 客户注册、登录、会话和管理员登录已走服务端网关。
 - `/healthz` 返回 200，`/readyz` 已达到 ready；Stripe 尚未启用属于预期状态。
 - 服务器运行时密钥只放在 `/etc/starsyun/starsyun.env`，没有提交到 Git。
@@ -32,14 +32,14 @@
 
 ### 3. 文件交付与存储分层
 
-- [ ] 执行 `supabase/migrations/005_create_delivery_assets.sql` 与 `006_create_delivery_downloads.sql`，建立交付对象和下载审计元数据表。
+- [x] 已执行 `supabase/migrations/005_create_delivery_assets.sql` 与 `006_create_delivery_downloads.sql`，建立交付对象和下载审计元数据表。
 - [ ] 腾讯 COS 建立 `preview`、`delivery`、`archive` 三个私有桶或等价前缀。
 - [ ] Supabase 只保存文件元数据、COS Object Key、校验值、授权和下载审计，不保存卫星原始影像。
 - [ ] 管理员交付文件后，客户详情页只显示短时签名下载 URL；Node 不中转大文件。
 - [ ] 交付 URL 必须绑定用户、订单、文件版本和过期时间，支持撤销和重新签发。
 - [ ] COS 配置版本控制、生命周期和跨区域备份；预览资源才允许 CDN 缓存。
 
-当前代码已提供交付闭环的服务端接口：管理员可查询订单、登记或撤销交付文件并标记订单为已交付；客户只能在本人订单进入 `delivered` 后读取文件元数据，下载时由服务端签发短时 COS URL，并写入 `delivery_downloads` 审计记录。上线前仍需执行 006 迁移、配置私有 COS Bucket，并用真实对象完成一次下载/撤销验收。
+当前代码已提供交付闭环的服务端接口：管理员可查询订单、登记或撤销交付文件并标记订单为已交付；客户只能在本人订单进入 `delivered` 后读取文件元数据，下载时由服务端签发短时 COS URL，并写入 `delivery_downloads` 审计记录。仍需配置私有 COS Bucket，并用真实对象完成一次下载/撤销验收。
 
 ### 4. 安全门禁
 
