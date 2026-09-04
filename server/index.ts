@@ -1,4 +1,5 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -144,6 +145,27 @@ function applySecurityHeaders(response: ServerResponse) {
   response.setHeader('X-Frame-Options', 'DENY');
   response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (process.env.NODE_ENV === 'production') {
+    response.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+}
+
+function requestId(request: IncomingMessage) {
+  const incoming = request.headers['x-request-id'];
+  const value = Array.isArray(incoming) ? incoming[0] : incoming;
+  return value && /^[A-Za-z0-9._-]{8,128}$/.test(value) ? value : randomUUID();
+}
+
+function logRequest(request: IncomingMessage, response: ServerResponse, id: string, startedAt: number) {
+  if (request.url?.startsWith('/healthz')) return;
+  console.log(JSON.stringify({
+    event: 'http_request',
+    requestId: id,
+    method: request.method || 'GET',
+    path: (request.url || '/').split('?')[0],
+    status: response.statusCode,
+    durationMs: Date.now() - startedAt,
+  }));
 }
 
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
@@ -207,6 +229,10 @@ function serveFrontend(request: IncomingMessage, response: ServerResponse, url: 
 }
 
 const server = createServer(async (request, response) => {
+  const startedAt = Date.now();
+  const id = requestId(request);
+  request.headers['x-request-id'] = id;
+  response.setHeader('X-Request-Id', id);
   applySecurityHeaders(response);
   const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
   try {
@@ -237,6 +263,8 @@ const server = createServer(async (request, response) => {
     const message = status < 500 && error instanceof Error ? error.message : 'internal server error';
     if (status >= 500) console.error(error);
     if (!response.writableEnded) sendJson(response, status, { error: message });
+  } finally {
+    logRequest(request, response, id, startedAt);
   }
 });
 

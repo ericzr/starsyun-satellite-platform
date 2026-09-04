@@ -45,7 +45,9 @@ async function expectStatus(path, expected, init) {
 
 try {
   await waitForServer();
-  const health = await (await expectStatus('/healthz', 200)).json();
+  const healthResponse = await expectStatus('/healthz', 200);
+  if (!healthResponse.headers.get('x-request-id')) throw new Error('health response is missing x-request-id');
+  const health = await healthResponse.json();
   if (health.status !== 'ok') throw new Error('health payload is invalid');
   const ready = await (await expectStatus('/readyz', 200)).json();
   if (ready.status !== 'ready' || !ready.services?.supabase || !ready.services?.adminAuth) {

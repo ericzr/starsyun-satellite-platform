@@ -63,6 +63,7 @@
 
 - [ ] 结构化记录 request id、路由、耗时、上游供应商、状态码和错误类别，禁止记录密钥和用户密码。
 - [ ] 监控 `/healthz`、`/readyz`、Nginx 5xx、Node 重启、磁盘使用率、Supabase 错误率和 COS 失败率。
+- [ ] 汇总 Node `http_request` 结构化日志中的 `requestId`、路由、状态码和耗时，禁止记录请求体、Cookie 和任何密钥。
 - [ ] Supabase Pro 每日备份仅保留 7 天；另行执行逻辑备份到加密 COS，并每月恢复演练。
 - [ ] 服务器发布保留最近两个可回滚 release，发布前执行 type-check、lint、build、smoke 和数据库迁移检查。
 

@@ -16,7 +16,9 @@ type CacheEntry = { expiresAt: number; payload: unknown };
 
 const cache = new Map<string, CacheEntry>();
 const requests = new Map<string, { startedAt: number; count: number }>();
-const CACHE_TTL_MS = 60_000;
+// Five-minute server cache prevents duplicate global map queries while still
+// keeping recent acquisitions discoverable without client-side stale state.
+const CACHE_TTL_MS = 5 * 60_000;
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 60;
 const UPSTREAM_TIMEOUT_MS = 12_000;
