@@ -11,6 +11,7 @@
     "build:check": "tsc --noEmit && vite build",
     "smoke:server": "node scripts/smoke-server.mjs",
     "check:release": "node scripts/check-release.mjs",
+    "check:supabase": "node scripts/check-supabase.mjs",
     "start": "node dist-server/server.js",
     "preview": "vite preview",
     "lint": "eslint .",
