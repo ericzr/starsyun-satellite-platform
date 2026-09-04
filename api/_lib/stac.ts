@@ -15,13 +15,27 @@ type StacRequest = {
 type CacheEntry = { expiresAt: number; payload: unknown };
 
 const cache = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<unknown>>();
 const requests = new Map<string, { startedAt: number; count: number }>();
+let globalWindow = { startedAt: Date.now(), count: 0 };
 // Five-minute server cache prevents duplicate global map queries while still
 // keeping recent acquisitions discoverable without client-side stale state.
 const CACHE_TTL_MS = 5 * 60_000;
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 60;
 const UPSTREAM_TIMEOUT_MS = 12_000;
+
+function globalRateLimit() {
+  const configured = Number(process.env.STAC_GLOBAL_RATE_LIMIT || 300);
+  return Number.isFinite(configured) ? Math.max(30, Math.min(10_000, Math.floor(configured))) : 300;
+}
+
+function checkGlobalBudget() {
+  const now = Date.now();
+  if (now - globalWindow.startedAt >= RATE_WINDOW_MS) globalWindow = { startedAt: now, count: 0 };
+  globalWindow.count += 1;
+  if (globalWindow.count > globalRateLimit()) throw new GatewayError(429, 'provider request budget exceeded');
+}
 
 export class GatewayError extends Error {
   status: number;
@@ -109,32 +123,45 @@ export async function searchEarthSearch(input: ReturnType<typeof parseSearchRequ
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.payload;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-  try {
-    const query: Record<string, unknown> = {
-      collections: [input.collection],
-      bbox: input.bbox,
-      limit: input.limit,
-    };
-    if (input.datetime) query.datetime = input.datetime;
-    if (input.cloudCoverMax != null) query.query = { 'eo:cloud_cover': { lte: input.cloudCoverMax } };
+  const pending = inflight.get(key);
+  if (pending) return pending;
 
-    const response = await fetch(`${EARTH_SEARCH_BASE}/search`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/geo+json' },
-      body: JSON.stringify(query),
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new GatewayError(502, `provider returned ${response.status}`);
-    const payload = await response.json();
-    cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
-    return payload;
-  } catch (error) {
-    if (error instanceof GatewayError) throw error;
-    throw new GatewayError(504, 'provider request timed out or failed');
+  checkGlobalBudget();
+
+  const request = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+    try {
+      const query: Record<string, unknown> = {
+        collections: [input.collection],
+        bbox: input.bbox,
+        limit: input.limit,
+      };
+      if (input.datetime) query.datetime = input.datetime;
+      if (input.cloudCoverMax != null) query.query = { 'eo:cloud_cover': { lte: input.cloudCoverMax } };
+
+      const response = await fetch(`${EARTH_SEARCH_BASE}/search`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/geo+json' },
+        body: JSON.stringify(query),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new GatewayError(502, `provider returned ${response.status}`);
+      const payload = await response.json();
+      cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
+      return payload;
+    } catch (error) {
+      if (error instanceof GatewayError) throw error;
+      throw new GatewayError(504, 'provider request timed out or failed');
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+  inflight.set(key, request);
+  try {
+    return await request;
   } finally {
-    clearTimeout(timeout);
+    inflight.delete(key);
   }
 }
 
