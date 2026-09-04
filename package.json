@@ -10,6 +10,7 @@
     "build:production": "npm run build && npm run build:server",
     "build:check": "tsc --noEmit && vite build",
     "smoke:server": "node scripts/smoke-server.mjs",
+    "check:release": "node scripts/check-release.mjs",
     "start": "node dist-server/server.js",
     "preview": "vite preview",
     "lint": "eslint .",

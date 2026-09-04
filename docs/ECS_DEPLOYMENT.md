@@ -61,6 +61,8 @@ npm run build:production
 tar -czf starsyun-release.tgz dist dist-server package.json
 ```
 
+发布前可运行 npm run check:release 检查迁移文件和构建产物；在服务器准备好运行时文件后，再用 npm run check:release -- --runtime-env=/etc/starsyun/starsyun.env 检查必需配置、生产 CORS 和 COS 变量（不会打印密钥）。
+
 构建产物中：
 
 - `dist/`：前端静态产物。
