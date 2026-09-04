@@ -39,6 +39,9 @@ jobs:
       - name: Smoke-test self-hosted server
         run: npm run smoke:server
 
+      - name: Release preflight
+        run: npm run check:release
+
       - name: Package release
         run: tar -czf "starsyun-${GITHUB_SHA}.tar.gz" dist dist-server package.json
 
