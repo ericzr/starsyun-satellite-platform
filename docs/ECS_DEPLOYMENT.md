@@ -58,7 +58,7 @@ StarSyun Node service (127.0.0.1:3000)
 ```bash
 npm ci
 npm run build:production
-tar -czf starsyun-release.tgz dist dist-server package.json
+tar -czf starsyun-release.tgz dist dist-server package.json supabase/migrations deploy/systemd deploy/nginx
 ```
 
 发布前可运行 npm run check:release 检查迁移文件和构建产物；在服务器准备好运行时文件后，再用 npm run check:release -- --runtime-env=/etc/starsyun/starsyun.env 检查必需配置、生产 CORS 和 COS 变量（不会打印密钥）。
