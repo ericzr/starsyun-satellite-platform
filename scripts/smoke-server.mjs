@@ -37,8 +37,8 @@ async function waitForServer() {
   throw new Error(`server did not become ready\n${output}`);
 }
 
-async function expectStatus(path, expected) {
-  const response = await fetch(`${origin}${path}`);
+async function expectStatus(path, expected, init) {
+  const response = await fetch(`${origin}${path}`, init);
   if (response.status !== expected) throw new Error(`${path} returned ${response.status}, expected ${expected}`);
   return response;
 }
@@ -54,6 +54,18 @@ try {
   const spa = await expectStatus('/explore', 200);
   if (!(await spa.text()).includes('<div id="root"></div>')) throw new Error('SPA fallback did not return the frontend shell');
   await expectStatus('/api/does-not-exist', 404);
+  const sampleOrderId = '00000000-0000-4000-8000-000000000001';
+  await expectStatus('/api/orders', 401);
+  await expectStatus(`/api/orders/${sampleOrderId}/delivery-assets`, 401, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ objectKey: 'delivery/test.zip', fileName: 'test.zip' }),
+  });
+  await expectStatus(`/api/orders/${sampleOrderId}/delivery-status`, 401, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'delivered' }),
+  });
   console.log('server smoke test passed');
 } finally {
   if (child.exitCode === null) child.kill('SIGTERM');
