@@ -162,20 +162,24 @@ async function getJson(url) {
 }
 
 function bboxGeometry(geometry) {
-  const points = [];
-  const walk = (value) => {
-    if (!Array.isArray(value)) return;
+  let minLon = Number.POSITIVE_INFINITY;
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLon = Number.NEGATIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+  const stack = [geometry?.coordinates];
+  while (stack.length) {
+    const value = stack.pop();
+    if (!Array.isArray(value)) continue;
     if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
-      points.push(value);
-      return;
+      minLon = Math.min(minLon, value[0]);
+      minLat = Math.min(minLat, value[1]);
+      maxLon = Math.max(maxLon, value[0]);
+      maxLat = Math.max(maxLat, value[1]);
+      continue;
     }
-    value.forEach(walk);
-  };
-  walk(geometry?.coordinates);
-  if (!points.length) return null;
-  const lngs = points.map((point) => point[0]);
-  const lats = points.map((point) => point[1]);
-  return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
+    for (const child of value) stack.push(child);
+  }
+  return Number.isFinite(minLon) ? [minLon, minLat, maxLon, maxLat] : null;
 }
 
 function representativePoint(geometry, bbox) {
@@ -331,7 +335,9 @@ async function metadataFor(iso3, level) {
 }
 
 async function loadDataset(meta, iso3, level, iso2) {
-  const url = meta.gjDownloadURL || meta.simplifiedGeometryGeoJSON;
+  // Simplified geometry is sufficient for directory display and keeps large
+  // countries within memory/JSON limits during a production import.
+  const url = meta.simplifiedGeometryGeoJSON || meta.gjDownloadURL;
   if (!url) throw new Error(`no GeoJSON URL for ${iso3} ADM${level}`);
   const payload = await getJson(url);
   const features = Array.isArray(payload.features) ? payload.features : [];
