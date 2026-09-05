@@ -397,7 +397,19 @@ async function writeBatch(batch) {
     body: JSON.stringify(batch),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(`Supabase upsert failed (${response.status}): ${await response.text()}`);
+  if (!response.ok) {
+    const detail = await response.text();
+    // Supabase may cancel a large statement even when the payload is within
+    // the byte limit. Split and retry so one large country cannot stop a
+    // global import; a single oversized feature still surfaces as an error.
+    if (batch.length > 1 && /57014|statement timeout|canceling statement/iu.test(detail)) {
+      const midpoint = Math.ceil(batch.length / 2);
+      await writeBatch(batch.slice(0, midpoint));
+      await writeBatch(batch.slice(midpoint));
+      return;
+    }
+    throw new Error(`Supabase upsert failed (${response.status}): ${detail}`);
+  }
 }
 
 async function deactivateRows(rows) {
@@ -504,7 +516,12 @@ for (const iso3 of countries) {
   for (const level of levels) {
     const rows = byLevel.get(level) || [];
     if (!rows.length) continue;
-    await upsert(rows);
+    try {
+      await upsert(rows);
+    } catch (error) {
+      console.warn(`Skipping ${iso3} ADM${level}: Supabase write failed: ${error.message}`);
+      continue;
+    }
     imported += rows.length;
     console.log(`${iso3} ADM${level}: ${rows.length} areas imported`);
   }
