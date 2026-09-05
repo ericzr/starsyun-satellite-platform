@@ -61,11 +61,18 @@ if (emptyGeometryResponse) {
   for (const row of emptyGeometryRows) failures.push(`empty geometry on ${row.id}`);
 }
 
-const rowsResponse = await request(`admin_areas?select=id,country_iso3,level,parent_id,name_en,name_local,bbox,source_version&country_iso3=eq.${country}&is_active=eq.true&order=level.asc&limit=50000`).catch((error) => {
+const rows = [];
+try {
+  const pageSize = 1000;
+  for (let offset = 0; offset < 50000; offset += pageSize) {
+    const pageResponse = await request(`admin_areas?select=id,country_iso3,level,parent_id,name_en,name_local,bbox,source_version&country_iso3=eq.${country}&is_active=eq.true&order=level.asc&limit=${pageSize}&offset=${offset}`);
+    const page = await pageResponse.json();
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+} catch (error) {
   failures.push(`directory query failed: ${error.message}`);
-  return null;
-});
-const rows = rowsResponse ? await rowsResponse.json() : [];
+}
 const byId = new Map();
 for (const row of rows) {
   const id = String(row.id || '');

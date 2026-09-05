@@ -120,17 +120,27 @@ export async function listAdminAreas(query: ReturnType<typeof parseAdminQuery>) 
     // dependency on a third-party geocoder.
     params.set('or', `(name_en.ilike.*${value}*,name_local->>zh-Hans.ilike.*${value}*,name_local->>zh.ilike.*${value}*,name_local->>name:zh.ilike.*${value}*)`);
   }
-  let response: Response;
-  try {
-    response = await fetch(`${url}/rest/v1/admin_areas?${params.toString()}`, {
-      headers: { ...supabaseApiHeaders(key), Accept: 'application/json' },
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    throw new GatewayError(502, 'administrative directory unavailable');
+  const pageSize = Math.min(query.limit, 1000);
+  const rows: Row[] = [];
+  for (let offset = 0; offset < query.limit; offset += pageSize) {
+    const pageParams = new URLSearchParams(params);
+    pageParams.set('limit', String(Math.min(pageSize, query.limit - offset)));
+    pageParams.set('offset', String(offset));
+    let response: Response;
+    try {
+      response = await fetch(`${url}/rest/v1/admin_areas?${pageParams.toString()}`, {
+        headers: { ...supabaseApiHeaders(key), Accept: 'application/json' },
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      throw new GatewayError(502, 'administrative directory unavailable');
+    }
+    if (!response.ok) throw new GatewayError(502, `administrative directory failed (${response.status})`);
+    const page = (await response.json()) as Row[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
   }
-  if (!response.ok) throw new GatewayError(502, `administrative directory failed (${response.status})`);
-  return store(listCache, cacheKey, ((await response.json()) as Row[]).map(mapRow), LIST_CACHE_TTL_MS);
+  return store(listCache, cacheKey, rows.map(mapRow), LIST_CACHE_TTL_MS);
 }
 
 export async function getAdminArea(id: string) {
