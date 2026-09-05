@@ -15,7 +15,6 @@ export function LangToggle() {
   const otherLangs: Lang[] = ['ar', 'es', 'fr', 'pt', 'ru', 'ja', 'ko', 'de'];
 
   const handleSelect = (l: Lang) => {
-    console.log('Switching to language:', l);
     setLang(l);
     setOpen(false);
   };
@@ -40,10 +39,7 @@ export function LangToggle() {
         variant="ghost"
         size="sm"
         className="h-9 gap-1.5 rounded-md border border-border px-3 text-xs"
-        onClick={() => {
-          console.log('Toggle clicked, current open:', open);
-          setOpen(!open);
-        }}
+        onClick={() => setOpen(!open)}
       >
         <Languages className="size-4" />
         <span className="hidden sm:inline">{LANGUAGES[lang].nativeName}</span>
@@ -56,10 +52,7 @@ export function LangToggle() {
             {primaryLangs.map((l) => (
               <button
                 key={l}
-                onClick={() => {
-                  console.log('Primary lang clicked:', l);
-                  handleSelect(l);
-                }}
+                onClick={() => handleSelect(l)}
                 className="flex w-full cursor-pointer items-center justify-between rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
               >
                 <span>{LANGUAGES[l].nativeName}</span>
@@ -72,10 +65,7 @@ export function LangToggle() {
             {otherLangs.map((l) => (
               <button
                 key={l}
-                onClick={() => {
-                  console.log('Other lang clicked:', l);
-                  handleSelect(l);
-                }}
+                onClick={() => handleSelect(l)}
                 className="flex w-full cursor-pointer items-center justify-between rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
               >
                 <span>{LANGUAGES[l].nativeName}</span>

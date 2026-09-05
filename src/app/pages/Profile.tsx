@@ -3,15 +3,17 @@ import { useNavigate } from 'react-router';
 import { useI18n } from '../i18n';
 import { useUser } from '../context/UserContext';
 import { useCart } from '../context/CartContext';
+import { VALUE_ADDED_SERVICES } from '../data/products';
 import { loadCustomerInquiries, type Inquiry, type InquiryStatus } from '../lib/inquiries';
 import { acceptQuote, loadCustomerQuotes, type Quote } from '../lib/quotes';
 import { loadCustomerOrders, type ServerOrder } from '../lib/orders';
+import { loadPublicDownloads, type PublicDownload } from '../lib/downloads';
 import { fmtCny, fmtCnyEn } from '../lib/pricing';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
-import { User, ShoppingCart, Package, FileText, Settings, LogOut, Trash2, Plus, Minus, Clock, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import { User, ShoppingCart, Package, FileText, Settings, LogOut, Trash2, Plus, Minus, Clock, CheckCircle, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
 type TabValue = 'cart' | 'orders' | 'inquiries';
@@ -20,12 +22,18 @@ export function Profile() {
   const { lang } = useI18n();
   const navigate = useNavigate();
   const { user, logout } = useUser();
-  const { items, orders, removeFromCart, updateQuantity, getOrder } = useCart();
+  const { items, orders, removeFromCart, updateQuantity } = useCart();
+  const demoDataEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
+  const localOrders = demoDataEnabled ? orders : [];
+  const checkoutEnabled = import.meta.env.DEV
+    || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true'
+    || import.meta.env.VITE_ENABLE_CHECKOUT === 'true';
   const [activeTab, setActiveTab] = useState<TabValue>('cart');
 
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [serverOrders, setServerOrders] = useState<ServerOrder[]>([]);
+  const [downloads, setDownloads] = useState<PublicDownload[]>([]);
   const [acceptingQuote, setAcceptingQuote] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +54,14 @@ export function Profile() {
 
   useEffect(() => {
     let active = true;
+    loadPublicDownloads().then((next) => {
+      if (active) setDownloads(next);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let active = true;
     loadCustomerOrders().then((next) => {
       if (active) setServerOrders(next);
     }).catch(() => undefined);
@@ -53,7 +69,9 @@ export function Profile() {
   }, [user?.id]);
 
   const cartCount = items.reduce((sum, item) => sum + item.quantity, 0);
-  const cartTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  // CartItem.price is the current line total (CartContext updates it when the
+  // quantity changes), so multiplying by quantity here would double-count it.
+  const cartTotal = items.reduce((sum, item) => sum + item.price, 0);
 
   const handleLogout = () => {
     logout();
@@ -167,7 +185,7 @@ export function Profile() {
             <TabsTrigger value="orders" className="flex-1 gap-2">
               <Package className="size-4" />
               {lang === 'zh' ? '订单' : 'Orders'}
-              {orders.length + serverOrders.length > 0 && <Badge variant="secondary" className="ml-1">{orders.length + serverOrders.length}</Badge>}
+              {localOrders.length + serverOrders.length + downloads.length > 0 && <Badge variant="secondary" className="ml-1">{localOrders.length + serverOrders.length + downloads.length}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="inquiries" className="flex-1 gap-2">
               <FileText className="size-4" />
@@ -189,13 +207,26 @@ export function Profile() {
             ) : (
               <div className="space-y-4">
                 {items.map((item) => (
-                  <div key={`${item.product.id}-${item.processLevel}`} className="rounded-lg border border-border bg-card p-4">
+                  <div key={`${item.product.id}-${item.processLevel}-${(item.services ?? []).join('-')}`} className="rounded-lg border border-border bg-card p-4">
                     <div className="flex gap-4">
                       <div className="flex-1">
                         <h3 className="font-medium">{lang === 'zh' ? item.product.productName : item.product.productNameEn}</h3>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          {lang === 'zh' ? '处理级别' : 'Processing'}: {item.processLevel}
+                          {lang === 'zh' ? '处理级别' : 'Processing'}: {({
+                            raw: lang === 'zh' ? '原始数据' : 'Raw Data',
+                            standard: lang === 'zh' ? '标准处理' : 'Standard',
+                            analysis: lang === 'zh' ? '分析就绪' : 'Analysis Ready',
+                            L1: lang === 'zh' ? 'L1 原始数据' : 'L1 Raw Data',
+                            L2: lang === 'zh' ? 'L2 标准产品' : 'L2 Standard Product',
+                            L3: lang === 'zh' ? 'L3 正射影像' : 'L3 Orthorectified',
+                            L4: lang === 'zh' ? 'L4 增值产品' : 'L4 Value-Added',
+                          }[item.processLevel])}
                         </p>
+                        {(item.services ?? []).length > 0 && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {lang === 'zh' ? '增值服务' : 'Services'}: {(item.services ?? []).map((id) => VALUE_ADDED_SERVICES.find((service) => service.id === id)?.[lang === 'zh' ? 'name' : 'nameEn'] ?? id).join(', ')}
+                          </p>
+                        )}
                         <p className="mt-2 text-lg font-medium text-primary">
                           {money(item.price)} {lang === 'zh' ? '元' : 'CNY'}
                         </p>
@@ -204,7 +235,7 @@ export function Profile() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => removeFromCart(item.product.id)}
+                          onClick={() => removeFromCart(item.product.id, item.processLevel, item.services ?? [])}
                         >
                           <Trash2 className="size-4" />
                         </Button>
@@ -213,7 +244,7 @@ export function Profile() {
                             variant="outline"
                             size="icon"
                             className="size-8"
-                            onClick={() => updateQuantity(item.product.id, Math.max(1, item.quantity - 1))}
+                            onClick={() => updateQuantity(item.product.id, Math.max(1, item.quantity - 1), item.processLevel, item.services ?? [])}
                           >
                             <Minus className="size-3" />
                           </Button>
@@ -222,7 +253,7 @@ export function Profile() {
                             variant="outline"
                             size="icon"
                             className="size-8"
-                            onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                            onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.processLevel, item.services ?? [])}
                           >
                             <Plus className="size-3" />
                           </Button>
@@ -238,8 +269,10 @@ export function Profile() {
                       {money(cartTotal)} {lang === 'zh' ? '元' : 'CNY'}
                     </span>
                   </div>
-                  <Button className="mt-4 w-full" size="lg" onClick={handleCheckout}>
-                    {lang === 'zh' ? '去结算' : 'Checkout'}
+                  <Button className="mt-4 w-full" size="lg" disabled={!checkoutEnabled} onClick={handleCheckout}>
+                    {checkoutEnabled
+                      ? (lang === 'zh' ? '去结算' : 'Checkout')
+                      : (lang === 'zh' ? '在线结算未开放' : 'Checkout unavailable')}
                   </Button>
                 </div>
               </div>
@@ -248,7 +281,7 @@ export function Profile() {
 
           {/* Orders Tab */}
           <TabsContent value="orders" className="mt-6">
-            {orders.length === 0 && serverOrders.length === 0 ? (
+            {localOrders.length === 0 && serverOrders.length === 0 && downloads.length === 0 ? (
               <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-8">
                 <Package className="mb-4 size-12 text-muted-foreground/50" />
                 <p className="text-sm text-muted-foreground">{lang === 'zh' ? '暂无订单' : 'No orders yet'}</p>
@@ -272,16 +305,33 @@ export function Profile() {
                             <Badge variant={status.variant}>{lang === 'zh' ? status.label : status.labelEn}</Badge>
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">{lang === 'zh' ? '报价单' : 'Quote'}: {order.quoteNo} · {formatDate(order.createdAt)}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {lang === 'zh' ? '订单明细' : 'Line items'}: {order.items?.length ?? 0}
+                          </p>
                         </div>
                         <div className="text-right">
                           <div className="font-mono text-lg text-primary">{order.total.toLocaleString()} {order.currency}</div>
                           <div className="mt-1 text-xs text-muted-foreground">{lang === 'zh' ? '支付状态' : 'Payment'}: {order.paymentStatus}</div>
                         </div>
                       </div>
+                      {(order.items?.length ?? 0) > 0 && (
+                        <div className="mt-3 space-y-1 border-t border-primary/20 pt-3 text-xs text-muted-foreground">
+                          {order.items.map((item) => {
+                            const snapshot = item.productSnapshot ?? {};
+                            const name = typeof snapshot.productName === 'string' && snapshot.productName ? snapshot.productName : item.itemType;
+                            return (
+                              <div key={item.id} className="flex items-center justify-between gap-3">
+                                <span className="truncate">{name} × {item.quantity}</span>
+                                <span className="shrink-0 font-mono">{money(item.unitPrice)} {item.currency}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
-                {orders.map((order) => {
+                {localOrders.map((order) => {
                   const statusInfo = orderStatusConfig[order.status];
                   return (
                     <div
@@ -312,6 +362,39 @@ export function Profile() {
                     </div>
                   );
                 })}
+                {downloads.length > 0 && (
+                  <section className="pt-2">
+                    <h3 className="tech-label mb-3 text-xs text-muted-foreground">{lang === 'zh' ? '公开数据下载记录' : 'Public data downloads'}</h3>
+                    <div className="space-y-3">
+                      {downloads.map((download) => (
+                        <div key={download.id} className="rounded-lg border border-border bg-card p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="truncate font-medium">{download.productName}</span>
+                                <Badge variant="secondary">{lang === 'zh' ? '公开数据' : 'Open data'}</Badge>
+                              </div>
+                              <p className="mt-1 font-mono text-xs text-muted-foreground">{download.productCode}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {download.provider || (lang === 'zh' ? '公开数据源' : 'Public source')} · {formatDate(download.requestedAt)}
+                              </p>
+                              {download.fileFormat && <p className="mt-1 text-xs text-muted-foreground">{download.fileFormat}</p>}
+                            </div>
+                            <a
+                              href={download.sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                            >
+                              <ExternalLink className="size-3.5" />
+                              {lang === 'zh' ? '打开数据源' : 'Open source'}
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
               </div>
             )}
           </TabsContent>

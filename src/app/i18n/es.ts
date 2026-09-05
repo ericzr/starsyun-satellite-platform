@@ -1,8 +1,8 @@
 import { en } from './en';
 
 export const es = {
-  brand: 'OrbitData',
-  brandCn: 'Plataforma de Datos Satelitales',
+  brand: 'starsyun',
+  brandCn: 'starsyun',
   nav: {
     home: 'Inicio',
     explore: 'Centro de Datos',

@@ -10,8 +10,14 @@ type MlMap = ML.Map;
 type LngLatBoundsLike = ML.LngLatBoundsLike;
 
 const MAPLIBRE_VERSION = '4.7.1';
-const CDN_JS = `https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.js`;
-const CDN_CSS = `https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css`;
+const CDN_JS = [
+  `https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.js`,
+  `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.js`,
+];
+const CDN_CSS = [
+  `https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css`,
+  `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css`,
+];
 
 // Load MapLibre GL from a CDN at runtime so it never enters Vite's dependency
 // optimizer (which chokes on the library's web worker). Resolves to the global
@@ -23,28 +29,43 @@ function loadMapLibre(): Promise<typeof ML> {
   }
   if (maplibrePromise) return maplibrePromise;
   maplibrePromise = new Promise<typeof ML>((resolve, reject) => {
-    // CSS
+    // CSS is small but required for controls. Try the secondary CDN if the
+    // primary is blocked by a regional network policy.
     if (!document.querySelector(`link[data-maplibre]`)) {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
-      link.href = CDN_CSS;
+      link.href = CDN_CSS[0];
       link.setAttribute('data-maplibre', '');
+      link.onerror = () => { link.href = CDN_CSS[1]; };
       document.head.appendChild(link);
     }
-    // JS
-    const existing = document.querySelector<HTMLScriptElement>(`script[data-maplibre]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve((window as any).maplibregl));
-      existing.addEventListener('error', reject);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = CDN_JS;
-    script.async = true;
-    script.setAttribute('data-maplibre', '');
-    script.onload = () => resolve((window as any).maplibregl as typeof ML);
-    script.onerror = () => reject(new Error('Failed to load MapLibre GL'));
-    document.head.appendChild(script);
+
+    const loadScript = (index: number) => {
+      const existing = document.querySelector<HTMLScriptElement>(`script[data-maplibre="${index}"]`);
+      if (existing) {
+        existing.addEventListener('load', () => resolve((window as any).maplibregl));
+        existing.addEventListener('error', () => index + 1 < CDN_JS.length ? loadScript(index + 1) : reject(new Error('Failed to load MapLibre GL')));
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = CDN_JS[index];
+      script.async = true;
+      script.setAttribute('data-maplibre', String(index));
+      script.onload = () => resolve((window as any).maplibregl as typeof ML);
+      script.onerror = () => {
+        script.remove();
+        if (index + 1 < CDN_JS.length) loadScript(index + 1);
+        else reject(new Error('Failed to load MapLibre GL'));
+      };
+      document.head.appendChild(script);
+    };
+    loadScript(0);
+  });
+  // Allow a later mount/retry to recover after both CDNs were temporarily
+  // unavailable (for example during a regional network hiccup).
+  maplibrePromise = maplibrePromise.catch((error) => {
+    maplibrePromise = null;
+    throw error;
   });
   return maplibrePromise;
 }
@@ -143,6 +164,36 @@ interface MapCanvasProps {
 
 const ACCENT_DARK = '#ffffff';
 const ACCENT_LIGHT = '#0a0a0b';
+
+// OpenFreeMap and CARTO both expose places from an OpenMapTiles `place`
+// source. Their stock styles keep some city layers active from the globe
+// view, which makes labels such as China and Chengdu compete at the same
+// scale. Keep the hierarchy explicit and consistent across the vector styles
+// we offer in the layer picker.
+const PLACE_LABEL_ZOOM_RULES: readonly { pattern: RegExp; min: number; max: number }[] = [
+  { pattern: /^place_country(?:_|$)/, min: 0, max: 5.5 },
+  { pattern: /^place_state(?:_|$)/, min: 5.5, max: 8.5 },
+  { pattern: /^place_city_large$/, min: 8.5, max: 11 },
+  { pattern: /^place_city(?:_|$)/, min: 10.5, max: 15 },
+  { pattern: /^place_town(?:_|$)/, min: 12, max: 15 },
+  { pattern: /^place_villages?(?:_|$)/, min: 14, max: 16 },
+  { pattern: /^place_suburbs?(?:_|$)/, min: 15, max: 16 },
+  { pattern: /^place_(?:other|hamlet)(?:_|$)/, min: 15, max: 16 },
+];
+
+const TAIWAN_PROVINCE_LABEL: GeoJSON.Feature<GeoJSON.Point> = {
+  type: 'Feature',
+  geometry: { type: 'Point', coordinates: [121, 23.65] },
+  properties: {
+    'name:zh': '台湾省',
+    'name:en': 'Taiwan Province',
+    'name:es': 'Provincia de Taiwan',
+    'name:ar': 'مقاطعة تايوان',
+    'name:ja': '台湾省',
+    'name:ko': '타이완성',
+    name: 'Taiwan Province',
+  },
+};
 
 export function MapCanvas({
   center = [20, 25],
@@ -494,6 +545,57 @@ function applyMapLanguage(map: MlMap, lang: Lang) {
       ['get', 'name'],
     ]);
   }
+  setTaiwanProvinceLabelLanguage(map, preferredField);
+  applyPlaceLabelHierarchy(map);
+}
+
+function setTaiwanProvinceLabelLanguage(map: MlMap, preferredField: string) {
+  if (!map.getLayer('taiwan-province-label')) return;
+  map.setLayoutProperty('taiwan-province-label', 'text-field', [
+    'coalesce',
+    ['get', preferredField],
+    ['get', 'name:en'],
+    ['get', 'name'],
+  ]);
+}
+
+function applyPlaceLabelHierarchy(map: MlMap) {
+  const style = map.getStyle();
+  for (const layer of style.layers ?? []) {
+    const placeLayer = layer as typeof layer & { 'source-layer'?: string; filter?: unknown; minzoom?: number; maxzoom?: number };
+    if (placeLayer.type !== 'symbol' || placeLayer['source-layer'] !== 'place') continue;
+
+    const rule = PLACE_LABEL_ZOOM_RULES.find(({ pattern }) => pattern.test(placeLayer.id));
+    if (rule) {
+      // A provider may already have a stricter threshold for a dense city or
+      // local-label layer. The platform hierarchy can only make it stricter.
+      const minZoom = Math.max(rule.min, placeLayer.minzoom ?? 0);
+      const maxZoom = Math.max(minZoom, Math.min(rule.max, placeLayer.maxzoom ?? 24));
+      map.setLayerZoomRange(
+        placeLayer.id,
+        minZoom,
+        maxZoom,
+      );
+    }
+
+    // Upstream OpenStreetMap-derived styles classify Taiwan as an ADM0 label.
+    // Suppress that label and render the platform-owned Taiwan Province label
+    // with the province/state zoom range below instead.
+    if (!/^place_country(?:_|$)/.test(placeLayer.id)) continue;
+    const serializedFilter = JSON.stringify(placeLayer.filter ?? []);
+    if (serializedFilter.includes('__starsyun_country_label_override')) continue;
+    const baseFilter = placeLayer.filter;
+    const taiwanFilter = [
+      'all',
+      ['match', ['get', 'iso_a2'], ['TW', 'TWN', 'tw', 'twn'], false, true],
+      ['match', ['get', 'iso_a3'], ['TW', 'TWN', 'tw', 'twn'], false, true],
+      ['!=', ['get', '__starsyun_country_label_override'], 'applied'],
+    ];
+    const taiwanFiltered = baseFilter
+      ? ['all', baseFilter, ...taiwanFilter.slice(1)]
+      : taiwanFilter;
+    map.setFilter(placeLayer.id, taiwanFiltered as never);
+  }
 }
 
 function ensureLayers(map: MlMap, accent: string) {
@@ -571,6 +673,12 @@ function ensureLayers(map: MlMap, accent: string) {
   if (!map.getSource('aoi')) map.addSource('aoi', { type: 'geojson', data: empty });
   if (!map.getSource('boundary')) map.addSource('boundary', { type: 'geojson', data: empty });
   if (!map.getSource('draft')) map.addSource('draft', { type: 'geojson', data: empty });
+  if (!map.getSource('taiwan-province-label')) {
+    map.addSource('taiwan-province-label', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [TAIWAN_PROVINCE_LABEL] },
+    });
+  }
 
   if (!map.getLayer('footprints-fill')) {
     map.addLayer({
@@ -641,6 +749,27 @@ function ensureLayers(map: MlMap, accent: string) {
       type: 'line',
       source: 'draft',
       paint: { 'line-color': accent, 'line-width': 1.5, 'line-dasharray': [1, 1] },
+    });
+  }
+  if (!map.getLayer('taiwan-province-label')) {
+    map.addLayer({
+      id: 'taiwan-province-label',
+      type: 'symbol',
+      source: 'taiwan-province-label',
+      minzoom: 5.5,
+      maxzoom: 11,
+      layout: {
+        'text-field': ['coalesce', ['get', 'name:zh'], ['get', 'name:en'], ['get', 'name']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 5.5, 11, 10, 13],
+        'text-anchor': 'center',
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': accent,
+        'text-halo-color': accent === ACCENT_DARK ? '#101012' : '#ffffff',
+        'text-halo-width': 1.2,
+      },
     });
   }
 }

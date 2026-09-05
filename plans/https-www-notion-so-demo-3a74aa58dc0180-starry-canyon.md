@@ -1,4 +1,4 @@
-# 星图数据商城 / OrbitData — Demo 设计与实现方案
+# starsyun — Demo 设计与实现方案
 
 ## Context
 
@@ -45,7 +45,7 @@ PRD 覆盖 12 个前台页面 + 后台，范围过大。经与用户确认，本
 | `/inquiry/success` | 提交成功 | 询价单编号 + 后续说明 |
 | `/admin` | 简易后台 | 询价列表 + 状态流转 + 仪表盘小卡片 |
 
-顶部统一 `AppHeader`（Logo「OrbitData / 星图」、导航、语言切换、主题切换）。
+顶部统一 `AppHeader`（Logo「starsyun」、导航、语言切换、主题切换）。
 
 ---
 

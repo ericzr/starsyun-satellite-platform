@@ -6,7 +6,7 @@
 - 地图：MapLibre，Carto / OpenFreeMap / OSM 底图，NASA、Sentinel-2、Esri 等公开影像图层。
 - 数据查询：前端可直连 Earth Search；生产环境建议统一走 `/api/stac` 网关。
 - 服务端：同一组 API 处理器可运行在 Vercel Functions，也可通过 `server/index.ts` 运行在自有 Node/Nginx 服务器，负责 STAC 查询、询价、报价、订单、认证和 Stripe webhook。
-- 持久化：Supabase migrations `001` 至 `004`，保存询价、报价、订单和支付意图。
+- 持久化：Supabase migrations `001` 至 `010`，保存询价、报价、订单、交付、公开数据下载请求、行政区目录、图源登记、供应商作业、分析作业和钱包账本；`008` 提供受保护的原子 RPC，`009` 为接受报价订单补充可审计的商品快照明细，`010` 记录用户发起的公开源下载请求。
 
 ## 上线前必须完成
 
@@ -16,9 +16,9 @@
    - 生产环境禁止设置 `VITE_ENABLE_MOCK_DATA=true`，并确认管理员密码哈希已替换示例值。
 
 2. **数据库迁移与权限**
-   - 在生产 Supabase 项目按顺序执行 `001` 至 `006` 迁移；`005` 保存 COS 交付对象元数据，`006` 保存签名下载审计，不保存影像二进制。当前应用已接入 `/api/orders`、`/api/orders/:id/delivery-assets`、`/api/orders/:id/delivery-status` 和签名下载接口。
-   - 检查 RLS、索引、唯一约束和订单状态流转；备份策略至少按日执行。
-   - 管理员接口必须验证 HttpOnly 会话，不能使用前端 localStorage 作为权限依据。
+   - 在生产 Supabase 项目按顺序执行 `001` 至 `009` 迁移；`005` 保存 COS 交付对象元数据，`006` 保存签名下载审计，`007` 建立行政区、图源、供应商、分析和钱包基础表，`008` 保护钱包/支付/订单 RPC，`009` 允许报价订单保存商品快照，不保存影像二进制。当前应用已接入 `/api/orders`、`/api/orders/:id/delivery-assets`、`/api/orders/:id/delivery-status` 和签名下载接口。
+   - 检查 RLS、索引、唯一约束和订单状态流转；备份策略至少按日执行。行政区导入后运行 `npm run check:admin-data -- --country=CHN` 做父子层级和台湾省归属验收。
+   - 管理员接口必须验证 HttpOnly 会话，不能使用前端 localStorage 作为权限依据；正式构建不会在询价/结算故障时回退为本地伪数据。
 
 3. **真实业务闭环**
    - STAC 查询接入监控、超时和供应商配额；失败时返回可识别的降级状态。

@@ -30,6 +30,10 @@ const UserContext = createContext<UserContextValue | undefined>(undefined);
 
 const STORAGE_KEY = 'starsyun_user';
 
+function mockAuthEnabled() {
+  return import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
+}
+
 type SessionUser = { id?: string; email: string; name?: string; phone?: string; company?: string; role: 'user' | 'admin' };
 
 function userFromSession(session: SessionUser): User {
@@ -57,7 +61,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
     let active = true;
     fetch('/api/auth/session', { credentials: 'include' })
       .then(async (response) => {
-        if (!response.ok) return;
+        if (!response.ok) {
+          // The server session is authoritative in production. Clear stale
+          // local UI state instead of allowing it to impersonate a session.
+          if (!mockAuthEnabled() && active) setUser(null);
+          return;
+        }
         const payload = (await response.json()) as { user?: SessionUser };
         if (active && payload.user) setUser(userFromSession(payload.user));
       })
@@ -99,9 +108,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
       if (!(error instanceof TypeError)) throw error;
     }
 
-    const mockAuthEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
-    if (!mockAuthEnabled) throw new Error('登录服务未配置');
-    const demoAdmin = mockAuthEnabled;
+    const allowMockAuth = mockAuthEnabled();
+    if (!allowMockAuth) throw new Error('登录服务未配置');
+    const demoAdmin = allowMockAuth;
     const newUser: User = {
       id: `user-${Date.now()}`,
       name: email.split('@')[0],
@@ -137,8 +146,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       if (!(error instanceof TypeError)) throw error;
     }
 
-    const mockAuthEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
-    if (!mockAuthEnabled) throw new Error('注册服务未配置');
+    if (!mockAuthEnabled()) throw new Error('注册服务未配置');
 
     // 注册成功后自动登录
     const newUser: User = {

@@ -17,6 +17,7 @@ import deliveryAssets from '../api/orders/[id]/delivery-assets';
 import deliveryAsset from '../api/orders/[id]/delivery-assets/[assetId]';
 import deliveryDownload from '../api/orders/[id]/delivery-assets/[assetId]/download';
 import deliveryStatus from '../api/orders/[id]/delivery-status';
+import cancelOrder from '../api/orders/[id]/cancel';
 import orders from '../api/orders/index';
 import myOrders from '../api/orders/mine';
 import quoteDetail from '../api/quotes/[id]';
@@ -26,6 +27,23 @@ import myQuotes from '../api/quotes/mine';
 import stacItem from '../api/stac/item/[id]';
 import stacSearch from '../api/stac/search';
 import stripeWebhook from '../api/webhooks/stripe';
+import adminAreas from '../api/admin/areas';
+import adminArea from '../api/admin/areas/[id]';
+import catalogSources from '../api/catalog/sources';
+import catalogProducts from '../api/catalog/products';
+import analysisJobs from '../api/analysis/jobs';
+import adminAnalysisJobs from '../api/admin/analysis-jobs';
+import adminAnalysisJob from '../api/admin/analysis-jobs/[id]';
+import adminProviderQuotes from '../api/admin/provider-quotes';
+import adminProviderQuote from '../api/admin/provider-quotes/[id]';
+import adminProviderOrders from '../api/admin/provider-orders';
+import adminProviderOrder from '../api/admin/provider-orders/[id]';
+import adminCatalogProducts from '../api/admin/catalog-products';
+import wallet from '../api/wallet/index';
+import walletHolds from '../api/wallet/holds';
+import adminWalletCredit from '../api/admin/wallet-credit';
+import adminWalletOperation from '../api/admin/wallet-operation';
+import downloads from '../api/downloads/index';
 import type { ApiRequest, ApiResponse } from '../api/_lib/http';
 
 type Handler = (req: ApiRequest, res: ApiResponse) => Promise<unknown> | unknown;
@@ -39,6 +57,23 @@ interface ApiRoute {
 }
 
 const routes: ApiRoute[] = [
+  { pattern: /^\/api\/admin\/analysis-jobs\/([^/]+)\/?$/, handler: adminAnalysisJob, parameter: 'id' },
+  { pattern: /^\/api\/admin\/analysis-jobs\/?$/, handler: adminAnalysisJobs },
+  { pattern: /^\/api\/admin\/provider-quotes\/([^/]+)\/?$/, handler: adminProviderQuote, parameter: 'id' },
+  { pattern: /^\/api\/admin\/provider-quotes\/?$/, handler: adminProviderQuotes },
+  { pattern: /^\/api\/admin\/provider-orders\/([^/]+)\/?$/, handler: adminProviderOrder, parameter: 'id' },
+  { pattern: /^\/api\/admin\/provider-orders\/?$/, handler: adminProviderOrders },
+  { pattern: /^\/api\/admin\/wallet-credit\/?$/, handler: adminWalletCredit },
+  { pattern: /^\/api\/admin\/wallet-operation\/?$/, handler: adminWalletOperation },
+  { pattern: /^\/api\/admin\/catalog-products\/?$/, handler: adminCatalogProducts },
+  { pattern: /^\/api\/admin\/areas\/([^/]+)\/?$/, handler: adminArea, parameter: 'id' },
+  { pattern: /^\/api\/admin\/areas\/?$/, handler: adminAreas },
+  { pattern: /^\/api\/catalog\/sources\/?$/, handler: catalogSources },
+  { pattern: /^\/api\/catalog\/products\/?$/, handler: catalogProducts },
+  { pattern: /^\/api\/analysis\/jobs\/?$/, handler: analysisJobs },
+  { pattern: /^\/api\/downloads\/?$/, handler: downloads },
+  { pattern: /^\/api\/wallet\/holds\/?$/, handler: walletHolds },
+  { pattern: /^\/api\/wallet\/?$/, handler: wallet },
   { pattern: /^\/api\/auth\/login\/?$/, handler: login },
   { pattern: /^\/api\/auth\/logout\/?$/, handler: logout },
   { pattern: /^\/api\/auth\/register\/?$/, handler: register },
@@ -53,6 +88,7 @@ const routes: ApiRoute[] = [
   { pattern: /^\/api\/orders\/mine\/?$/, handler: myOrders },
   { pattern: /^\/api\/orders\/([^/]+)\/delivery-assets\/([^/]+)\/?$/, handler: deliveryAsset, parameters: { id: 1, assetId: 2 } },
   { pattern: /^\/api\/orders\/([^/]+)\/delivery-assets\/([^/]+)\/download\/?$/, handler: deliveryDownload, parameters: { id: 1, assetId: 2 } },
+  { pattern: /^\/api\/orders\/([^/]+)\/cancel\/?$/, handler: cancelOrder, parameter: 'id' },
   { pattern: /^\/api\/orders\/([^/]+)\/delivery-assets\/?$/, handler: deliveryAssets, parameter: 'id' },
   { pattern: /^\/api\/orders\/([^/]+)\/delivery-status\/?$/, handler: deliveryStatus, parameter: 'id' },
   { pattern: /^\/api\/orders\/([^/]+)\/payment-intent\/?$/, handler: paymentIntent, parameter: 'id' },
@@ -145,6 +181,9 @@ function applySecurityHeaders(response: ServerResponse) {
   response.setHeader('X-Frame-Options', 'DENY');
   response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // Keep this report-only until every optional map provider is approved. It still
+  // surfaces unexpected script/connect origins without breaking a configured tile source.
+  response.setHeader('Content-Security-Policy-Report-Only', "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https:; worker-src 'self' blob:");
   if (process.env.NODE_ENV === 'production') {
     response.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }

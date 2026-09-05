@@ -54,7 +54,6 @@ export function Home() {
 
   // Enter the map data center already carrying the user's intent (place / coords).
   const go = async (q: string = query) => {
-    console.log('=== GO FUNCTION CALLED ===', q);
     const targetUrl = `/explore${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`;
 
     // Start transition animation
@@ -66,8 +65,6 @@ export function Home() {
       const targetX = 0; // Move to center (0 is center of canvas)
       const startTime = Date.now();
       const duration = 1000; // 1 second
-
-      console.log('Animating rig position from', startX, 'to', targetX);
 
       const animate = () => {
         if (!rigRef.current) return;
@@ -95,7 +92,6 @@ export function Home() {
 
     // Navigate earlier (at 500ms) so map page can start fading in while globe is still visible
     setTimeout(() => {
-      console.log('Navigating to:', targetUrl);
       navigate(targetUrl);
     }, 500);
   };
@@ -115,12 +111,12 @@ export function Home() {
   const quickRegions = REGIONS.slice(0, 5);
 
   const categories = [
-    { icon: History, ...t.categories.history },
-    { icon: Sparkles, ...t.categories.latest },
-    { icon: Crosshair, ...t.categories.tasking },
-    { icon: Radar, ...t.categories.sar },
-    { icon: Mountain, ...t.categories.dem },
-    { icon: BrainCircuit, ...t.categories.ai },
+    { route: 'archive', icon: History, ...t.categories.history },
+    { route: 'latest', icon: Sparkles, ...t.categories.latest },
+    { route: 'tasking', icon: Crosshair, ...t.categories.tasking },
+    { route: 'sar', icon: Radar, ...t.categories.sar },
+    { route: 'dem', icon: Mountain, ...t.categories.dem },
+    { route: 'analysis', icon: BrainCircuit, ...t.categories.ai },
   ];
 
   const advantages = [
@@ -170,7 +166,6 @@ export function Home() {
             className="absolute inset-0 cursor-pointer"
             onClick={(e) => {
               e.preventDefault();
-              console.log('Overlay clicked');
               go();
             }}
             onKeyDown={(e) => e.key === 'Enter' && go()}
@@ -270,7 +265,7 @@ export function Home() {
           {categories.map((c) => (
             <Card
               key={c.name}
-              onClick={() => navigate('/explore')}
+              onClick={() => navigate(`/explore?category=${c.route}`)}
               className="cursor-pointer gap-3 border-border bg-card p-4 transition-colors hover:border-primary/60 sm:p-5"
             >
               <c.icon className="size-5 text-primary sm:size-6" />

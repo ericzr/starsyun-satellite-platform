@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Check, Archive, Satellite, BarChart3, Clock, Package, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Archive, Satellite, BarChart3, Clock } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getProduct, VALUE_ADDED_SERVICES, type Product, type ProcessingLevel, type ValueAddedService } from '../data/products';
 import { fetchRemoteProduct, getRemoteProduct } from '../services/stac';
-import { getSatellite } from '../data/satellites';
+import { fetchCatalogProduct } from '../services/catalog';
 import { fmtCny, fmtCnyEn } from '../lib/pricing';
-import { MapCanvas } from '../components/MapCanvas';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -15,12 +14,13 @@ import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Label } from '../components/ui/label';
 import { Checkbox } from '../components/ui/checkbox';
 import { Card } from '../components/ui/card';
-import { DATA_TYPE_LABEL, STATUS_LABEL, pick } from '../lib/labels';
+import { DATA_TYPE_LABEL, pick } from '../lib/labels';
 import { useInquiryDraft } from '../context/InquiryContext';
 import { useCart } from '../context/CartContext';
 import { toast } from 'sonner';
+import { PublicDownloadDialog } from '../components/PublicDownloadDialog';
 
-type ViewTab = 'basic' | 'services' | 'packages';
+type ViewTab = 'basic' | 'services';
 
 export function ProductDetail() {
   const { id } = useParams();
@@ -28,17 +28,25 @@ export function ProductDetail() {
   const navigate = useNavigate();
   const { setDraft } = useInquiryDraft();
   const { addToCart } = useCart();
-  const localProduct = id ? getProduct(id) ?? getRemoteProduct(id) : undefined;
+  const demoDataEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
+  // Demo inventory must never be reachable through a guessed product URL in
+  // production. Public STAC records and verified catalog records are loaded
+  // separately so both survive a direct detail-page refresh.
+  const localProduct = id
+    ? (demoDataEnabled ? getProduct(id) : undefined) ?? getRemoteProduct(id)
+    : undefined;
   const [remoteProduct, setRemoteProduct] = useState<Product | undefined>(localProduct);
-  const [remoteLoading, setRemoteLoading] = useState(Boolean(id?.startsWith('earth-search-') && !localProduct));
+  const [remoteLoading, setRemoteLoading] = useState(Boolean(id && (id.startsWith('earth-search-') || id.startsWith('catalog-')) && !localProduct));
   const product = localProduct ?? remoteProduct;
 
   useEffect(() => {
     let cancelled = false;
-    const cached = id ? getProduct(id) ?? getRemoteProduct(id) : undefined;
+    const cached = id
+      ? (demoDataEnabled ? getProduct(id) : undefined) ?? getRemoteProduct(id)
+      : undefined;
     setRemoteProduct(cached);
 
-    if (!id?.startsWith('earth-search-') || cached) {
+    if ((!id?.startsWith('earth-search-') && !id?.startsWith('catalog-')) || cached) {
       setRemoteLoading(false);
       return () => {
         cancelled = true;
@@ -46,9 +54,15 @@ export function ProductDetail() {
     }
 
     setRemoteLoading(true);
-    fetchRemoteProduct(id)
+    // Clear a previous route's record immediately. Without this, navigating
+    // between direct product URLs can briefly render stale pricing/options.
+    const resolver = id.startsWith('earth-search-') ? fetchRemoteProduct(id) : fetchCatalogProduct(id);
+    resolver
       .then((resolved) => {
         if (!cancelled) setRemoteProduct(resolved);
+      })
+      .catch(() => {
+        if (!cancelled) setRemoteProduct(undefined);
       })
       .finally(() => {
         if (!cancelled) setRemoteLoading(false);
@@ -57,19 +71,28 @@ export function ProductDetail() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [demoDataEnabled, id]);
 
   const [viewTab, setViewTab] = useState<ViewTab>('basic');
   const [selectedLevel, setSelectedLevel] = useState<ProcessingLevel>('L2');
   const [selectedServices, setSelectedServices] = useState<ValueAddedService[]>([]);
-  const [opacity, setOpacity] = useState(100);
+  const productId = product?.id;
+  const productProcessingLevel = product?.processingLevel;
 
-  const sat = product ? getSatellite(product.satelliteId) : undefined;
+  useEffect(() => {
+    if (!productId || !productProcessingLevel) return;
+    setSelectedLevel(productProcessingLevel);
+    setSelectedServices([]);
+    setViewTab('basic');
+  }, [productId, productProcessingLevel]);
 
   // 处理级别定价（基于产品的基础价格）
   const levelPricing = useMemo(() => {
     if (!product) return null;
-    const basePrice = product.unitPrice * product.area;
+    // Apply the same minimum-order rule used by the explorer list. Without
+    // this, a detail-page quote could be lower than the payable list price.
+    const billableArea = Math.max(product.area, product.minArea);
+    const basePrice = product.unitPrice * billableArea;
     return {
       L1: Math.round(basePrice * 0.6),
       L2: Math.round(basePrice),
@@ -112,7 +135,14 @@ export function ProductDetail() {
 
   const money = (v: number) => (lang === 'zh' ? fmtCny(v) : fmtCnyEn(v));
   const cny = lang === 'zh' ? '元' : 'CNY';
-  const isOpenData = Boolean(product.sourceUrl);
+  // A source URL is also retained for some licensed products as provenance.
+  // Only free records with a public URL are eligible for the upstream
+  // download flow; paid products must remain in the inquiry/checkout flow.
+  const isOpenData = product.priceType === 'free' && Boolean(product.sourceUrl);
+  const hasFixedPrice = product.priceType === 'fixed' && product.unitPrice > 0;
+  const checkoutEnabled = import.meta.env.DEV
+    || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true'
+    || import.meta.env.VITE_ENABLE_CHECKOUT === 'true';
 
   const categoryInfo = {
     archive: { icon: Archive, label: lang === 'zh' ? '历史存档' : 'Archive' },
@@ -167,12 +197,12 @@ export function ProductDetail() {
   };
 
   const handleAddToCart = () => {
-    addToCart(product, 'raw', totalPrice);
+    addToCart(product, selectedLevel, totalPrice, selectedServices);
     toast.success(lang === 'zh' ? '已加入购物车' : 'Added to cart');
   };
 
   const handleBuyNow = () => {
-    addToCart(product, 'raw', totalPrice);
+    addToCart(product, selectedLevel, totalPrice, selectedServices);
     toast.success(lang === 'zh' ? '已加入购物车' : 'Added to cart');
     navigate('/cart');
   };
@@ -183,15 +213,17 @@ export function ProductDetail() {
       productId: product.id,
       productName: lang === 'zh' ? product.productName : product.productNameEn,
       areaKm2: product.area,
-      refPrice: totalPrice,
+      refPrice: hasFixedPrice || product.priceType === 'estimated'
+        ? levelPricing[selectedLevel]
+        : 0,
       expectRes: `≤ ${product.resolution}m`,
     });
     navigate('/inquiry/new');
   };
 
-  const availableServices = VALUE_ADDED_SERVICES.filter(s =>
-    product.availableServices?.includes(s.id)
-  );
+  const availableServices = hasFixedPrice
+    ? VALUE_ADDED_SERVICES.filter(s => product.availableServices?.includes(s.id))
+    : [];
 
   return (
     <div className="h-full overflow-y-auto">
@@ -249,152 +281,180 @@ export function ProductDetail() {
 
           {/* Right: Options */}
           <div className="space-y-4">
-            <Tabs value={viewTab} onValueChange={(v) => setViewTab(v as ViewTab)}>
-              <TabsList className="w-full">
-                <TabsTrigger value="basic" className="flex-1">
-                  {lang === 'zh' ? '基础影像' : 'Basic Image'}
-                </TabsTrigger>
-                <TabsTrigger value="services" className="flex-1" disabled={!availableServices.length}>
-                  {lang === 'zh' ? '增值服务' : 'Services'}
-                </TabsTrigger>
-                <TabsTrigger value="packages" className="flex-1" disabled>
-                  {lang === 'zh' ? '套餐' : 'Packages'}
-                </TabsTrigger>
-              </TabsList>
-
-              {/* 基础影像 */}
-              <TabsContent value="basic" className="mt-4 space-y-4">
-                <Card className="p-4">
-                  <h3 className="mb-3 text-sm font-medium">{lang === 'zh' ? '选择处理级别' : 'Processing Level'}</h3>
-                  <RadioGroup value={selectedLevel} onValueChange={(v) => setSelectedLevel(v as ProcessingLevel)}>
-                    {(['L1', 'L2', 'L3', 'L4'] as ProcessingLevel[]).map((level) => (
-                      <Label
-                        key={level}
-                        htmlFor={level}
-                        className="flex cursor-pointer items-start space-x-3 rounded-lg border-2 border-border p-4 transition-all hover:border-primary/50 hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-accent/50"
-                      >
-                        <RadioGroupItem value={level} id={level} className="mt-0.5" />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{levelInfo[level].name}</span>
-                            {level === 'L2' && (
-                              <Badge variant="secondary" className="text-[9px]">
-                                {lang === 'zh' ? '推荐' : 'Recommended'}
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground">{levelInfo[level].desc}</p>
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {levelInfo[level].features.map((f, i) => (
-                              <Badge key={i} variant="outline" className="text-[9px]">
-                                {f}
-                              </Badge>
-                            ))}
-                          </div>
-                          <p className="mt-3 font-mono text-sm font-medium text-primary">
-                            {money(levelPricing[level])} {cny}
-                          </p>
-                        </div>
-                      </Label>
-                    ))}
-                  </RadioGroup>
-                </Card>
-              </TabsContent>
-
-              {/* 增值服务 */}
-              <TabsContent value="services" className="mt-4 space-y-4">
-                <Card className="p-4">
-                  <h3 className="mb-3 text-sm font-medium">{lang === 'zh' ? '可选增值服务' : 'Optional Services'}</h3>
-                  <div className="space-y-3">
-                    {availableServices.map((service) => (
-                      <Label
-                        key={service.id}
-                        htmlFor={service.id}
-                        className="flex cursor-pointer items-start space-x-3 rounded-lg border-2 border-border p-4 transition-all hover:border-primary/50 hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-accent/50"
-                      >
-                        <Checkbox
-                          id={service.id}
-                          checked={selectedServices.includes(service.id)}
-                          onCheckedChange={() => toggleService(service.id)}
-                          className="mt-0.5"
-                        />
-                        <div className="flex-1">
-                          <div className="font-medium">
-                            {lang === 'zh' ? service.name : service.nameEn}
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {lang === 'zh' ? service.description : service.descriptionEn}
-                          </p>
-                          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                            <Clock className="size-3" />
-                            <span>{service.deliveryDays} {lang === 'zh' ? '天交付' : 'days'}</span>
-                            <span>•</span>
-                            <span className="font-mono text-primary">
-                              {money(service.priceRange[0])} - {money(service.priceRange[1])} {cny}
-                            </span>
-                          </div>
-                        </div>
-                      </Label>
-                    ))}
-                  </div>
-                </Card>
-              </TabsContent>
-
-              {/* 套餐（暂未实现） */}
-              <TabsContent value="packages" className="mt-4">
-                <Card className="p-8 text-center text-muted-foreground">
-                  <Package className="mx-auto mb-2 size-12 opacity-50" />
-                  <p>{lang === 'zh' ? '套餐功能即将推出' : 'Packages coming soon'}</p>
-                </Card>
-              </TabsContent>
-            </Tabs>
-
-            {/* 价格汇总 */}
-            <Card className="p-4">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    {levelInfo[selectedLevel].name}
-                  </span>
-                  <span className="font-mono">{money(levelPricing[selectedLevel])} {cny}</span>
+            {isOpenData ? (
+              <Card className="p-4">
+                <h3 className="text-sm font-medium">{lang === 'zh' ? '公开数据' : 'Open data'}</h3>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {lang === 'zh'
+                    ? '该记录由公开数据源提供，平台不收取费用，也不提供额外处理套餐。点击下方按钮即可前往数据源下载。'
+                    : 'This record is provided by a public source. There is no platform fee or paid processing package. Use the button below to download from the source.'}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <Badge variant="secondary">{lang === 'zh' ? '免费' : 'Free'}</Badge>
+                  <Badge variant="outline">{product.fileFormat}</Badge>
+                  <Badge variant="outline">{product.processingLevel}</Badge>
                 </div>
-                {selectedServices.map((serviceId) => {
-                  const service = VALUE_ADDED_SERVICES.find(s => s.id === serviceId);
-                  if (!service) return null;
-                  return (
-                    <div key={serviceId} className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        + {lang === 'zh' ? service.name : service.nameEn}
-                      </span>
-                      <span className="font-mono">{money(service.priceRange[0])} {cny}</span>
-                    </div>
-                  );
-                })}
-                <div className="border-t border-border pt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{lang === 'zh' ? '总计' : 'Total'}</span>
-                    <span className="text-xl font-medium text-primary">
-                      {money(totalPrice)} {cny}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <Clock className="mr-1 inline size-3" />
-                    {lang === 'zh' ? '预计' : 'Est.'} {product.deliveryDays} {lang === 'zh' ? '天交付' : 'days delivery'}
+              </Card>
+            ) : !hasFixedPrice ? (
+              <Card className="p-4">
+                <h3 className="text-sm font-medium">
+                  {product.priceType === 'estimated'
+                    ? (lang === 'zh' ? '参考估价' : 'Estimated pricing')
+                    : (lang === 'zh' ? '按需询价' : 'Quote required')}
+                </h3>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {product.priceType === 'estimated' && levelPricing[selectedLevel] > 0
+                    ? (lang === 'zh'
+                      ? '该金额仅用于预算参考。授权范围、处理要求和交付条件确认后，将生成正式报价。'
+                      : 'This amount is for budget planning only. A formal quote follows confirmation of licensing, processing, and delivery terms.')
+                    : (lang === 'zh'
+                      ? '该产品需确认授权范围、处理要求和交付条件后生成正式报价。'
+                      : 'Licensing, processing, and delivery terms must be confirmed before a formal quote is issued.')}
+                </p>
+                {product.priceType === 'estimated' && levelPricing[selectedLevel] > 0 && (
+                  <p className="mt-3 font-mono text-lg text-primary">
+                    {lang === 'zh' ? '参考 ' : 'Est. '}{money(levelPricing[selectedLevel])} {cny}
                   </p>
-                </div>
-              </div>
-            </Card>
+                )}
+              </Card>
+            ) : (
+              <>
+                <Tabs value={viewTab} onValueChange={(v) => setViewTab(v as ViewTab)}>
+                  <TabsList className="w-full">
+                    <TabsTrigger value="basic" className="flex-1">
+                      {lang === 'zh' ? '基础影像' : 'Basic Image'}
+                    </TabsTrigger>
+                    <TabsTrigger value="services" className="flex-1" disabled={!availableServices.length}>
+                      {lang === 'zh' ? '增值服务' : 'Services'}
+                    </TabsTrigger>
+                    {/* Packages remain hidden until package pricing and fulfillment are implemented. */}
+                  </TabsList>
+
+                  <TabsContent value="basic" className="mt-4 space-y-4">
+                    <Card className="p-4">
+                      <h3 className="mb-3 text-sm font-medium">{lang === 'zh' ? '选择处理级别' : 'Processing Level'}</h3>
+                      <RadioGroup value={selectedLevel} onValueChange={(v) => setSelectedLevel(v as ProcessingLevel)}>
+                        {(['L1', 'L2', 'L3', 'L4'] as ProcessingLevel[]).map((level) => (
+                          <Label
+                            key={level}
+                            htmlFor={level}
+                            className="flex cursor-pointer items-start space-x-3 rounded-lg border-2 border-border p-4 transition-all hover:border-primary/50 hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-accent/50"
+                          >
+                            <RadioGroupItem value={level} id={level} className="mt-0.5" />
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{levelInfo[level].name}</span>
+                                {level === 'L2' && (
+                                  <Badge variant="secondary" className="text-[9px]">
+                                    {lang === 'zh' ? '推荐' : 'Recommended'}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">{levelInfo[level].desc}</p>
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {levelInfo[level].features.map((f, i) => (
+                                  <Badge key={i} variant="outline" className="text-[9px]">
+                                    {f}
+                                  </Badge>
+                                ))}
+                              </div>
+                              <p className="mt-3 font-mono text-sm font-medium text-primary">
+                                {money(levelPricing[level])} {cny}
+                              </p>
+                            </div>
+                          </Label>
+                        ))}
+                      </RadioGroup>
+                    </Card>
+                  </TabsContent>
+
+                  <TabsContent value="services" className="mt-4 space-y-4">
+                    <Card className="p-4">
+                      <h3 className="mb-3 text-sm font-medium">{lang === 'zh' ? '可选增值服务' : 'Optional Services'}</h3>
+                      <div className="space-y-3">
+                        {availableServices.map((service) => (
+                          <Label
+                            key={service.id}
+                            htmlFor={service.id}
+                            className="flex cursor-pointer items-start space-x-3 rounded-lg border-2 border-border p-4 transition-all hover:border-primary/50 hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-accent/50"
+                          >
+                            <Checkbox
+                              id={service.id}
+                              checked={selectedServices.includes(service.id)}
+                              onCheckedChange={() => toggleService(service.id)}
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium">
+                                {lang === 'zh' ? service.name : service.nameEn}
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {lang === 'zh' ? service.description : service.descriptionEn}
+                              </p>
+                              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                                <Clock className="size-3" />
+                                <span>{service.deliveryDays} {lang === 'zh' ? '天交付' : 'days'}</span>
+                                <span>•</span>
+                                <span className="font-mono text-primary">
+                                  {money(service.priceRange[0])} - {money(service.priceRange[1])} {cny}
+                                </span>
+                              </div>
+                            </div>
+                          </Label>
+                        ))}
+                      </div>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
+
+                <Card className="p-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{levelInfo[selectedLevel].name}</span>
+                      <span className="font-mono">{money(levelPricing[selectedLevel])} {cny}</span>
+                    </div>
+                    {selectedServices.map((serviceId) => {
+                      const service = VALUE_ADDED_SERVICES.find(s => s.id === serviceId);
+                      if (!service) return null;
+                      return (
+                        <div key={serviceId} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">+ {lang === 'zh' ? service.name : service.nameEn}</span>
+                          <span className="font-mono">{money(service.priceRange[0])} {cny}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="border-t border-border pt-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{lang === 'zh' ? '总计' : 'Total'}</span>
+                        <span className="text-xl font-medium text-primary">{money(totalPrice)} {cny}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        <Clock className="mr-1 inline size-3" />
+                        {lang === 'zh' ? '预计' : 'Est.'} {product.deliveryDays} {lang === 'zh' ? '天交付' : 'days delivery'}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              </>
+            )}
 
             {/* 操作按钮 */}
             <div className="flex gap-2">
               {isOpenData ? (
-                <Button asChild className="w-full gap-2">
-                  <a href={product.sourceUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="size-4" />
-                    {lang === 'zh' ? '打开公开数据' : 'Open public data'}
-                  </a>
+                <PublicDownloadDialog
+                  productId={product.id}
+                  sourceUrl={product.sourceUrl!}
+                  productCode={product.productCode}
+                  productName={lang === 'zh' ? product.productName : product.productNameEn}
+                  provider={product.provider}
+                  fileFormat={product.fileFormat}
+                  className="w-full"
+                />
+              ) : product.priceType === 'free' ? (
+                <Button type="button" variant="outline" className="w-full" disabled>
+                  {lang === 'zh' ? '暂无公开下载源' : 'No public download source'}
                 </Button>
-              ) : product.purchaseType === 'instant' ? (
+              ) : product.purchaseType === 'instant' && checkoutEnabled ? (
                 <>
                   <Button variant="outline" className="flex-1" onClick={handleAddToCart}>
                     {lang === 'zh' ? '加入购物车' : 'Add to Cart'}

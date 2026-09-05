@@ -1,6 +1,21 @@
 export type ServerOrderStatus = 'pending_payment' | 'paid' | 'fulfillment' | 'delivered' | 'cancelled';
 export type PaymentStatus = 'unpaid' | 'processing' | 'paid' | 'refunded' | 'failed';
 
+export interface ServerOrderItem {
+  id: string;
+  orderId: string;
+  providerProductId?: string;
+  providerId?: string;
+  externalProductId?: string;
+  itemType: string;
+  quantity: number;
+  unitPrice: number;
+  currency: string;
+  productSnapshot: Record<string, unknown>;
+  licenseSnapshot: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface ServerOrder {
   id: string;
   orderNo: string;
@@ -15,13 +30,14 @@ export interface ServerOrder {
   deliveryDays: number;
   status: ServerOrderStatus;
   paymentStatus: PaymentStatus;
-  paymentProvider?: 'stripe';
+  paymentProvider?: 'stripe' | 'alipay' | 'paypal' | 'payple' | 'bank-transfer' | 'wallet';
   paymentIntentId?: string;
   paymentClientSecret?: string;
   paymentCreatedAt?: string;
   createdAt: string;
   paidAt?: string;
   deliveredAt?: string;
+  items: ServerOrderItem[];
 }
 
 export interface DeliveryAsset {

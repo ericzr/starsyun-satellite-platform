@@ -1,6 +1,6 @@
 import type { Product } from '../data/products';
 import type { BBox } from '../lib/geo';
-import { bboxAreaKm2 } from '../lib/geo';
+import { bboxAreaKm2, splitBBox } from '../lib/geo';
 
 const EARTH_SEARCH_URL = 'https://earth-search.aws.element84.com/v1/search';
 const EARTH_SEARCH_COLLECTION = 'sentinel-2-l2a';
@@ -61,6 +61,10 @@ function asset(item: StacItem, key: string) {
   return item.assets?.[key]?.href;
 }
 
+function publicUrl(value: unknown) {
+  return typeof value === 'string' && /^https?:\/\//i.test(value) ? value : '';
+}
+
 function dateOnly(value: unknown) {
   return typeof value === 'string' ? value.slice(0, 10) : '';
 }
@@ -78,8 +82,8 @@ function normalizeItem(item: StacItem, index: number): Product | null {
   const sunElevation = numberValue(properties['view:sun_elevation'], 0);
   const epsg = numberValue(properties['proj:epsg'], 4326);
   const id = `earth-search-${item.id}`;
-  const thumbnail = asset(item, 'thumbnail') ?? link(item, 'thumbnail') ?? '';
-  const sourceUrl = asset(item, 'visual') ?? link(item, 'self') ?? '';
+  const thumbnail = publicUrl(asset(item, 'thumbnail') ?? link(item, 'thumbnail'));
+  const sourceUrl = publicUrl(asset(item, 'visual') ?? link(item, 'self'));
   const area = Math.max(1, Math.round(bboxAreaKm2(bbox)));
 
   return {
@@ -124,17 +128,17 @@ function normalizeItem(item: StacItem, index: number): Product | null {
   };
 }
 
-export async function searchEarthSearch(input: EarthSearchInput): Promise<Product[]> {
+async function searchEarthSearchBox(input: EarthSearchInput, bbox: BBox): Promise<StacItem[]> {
   const body: Record<string, unknown> = STAC_GATEWAY_URL
     ? {
-        bbox: input.bbox,
+        bbox,
         datetime: input.datetime,
         cloudCoverMax: input.cloudCoverMax,
         limit: Math.min(input.limit ?? 60, 100),
       }
     : {
         collections: [EARTH_SEARCH_COLLECTION],
-        bbox: input.bbox,
+        bbox,
         limit: Math.min(input.limit ?? 60, 100),
       };
   if (!STAC_GATEWAY_URL && input.datetime) body.datetime = input.datetime;
@@ -150,7 +154,16 @@ export async function searchEarthSearch(input: EarthSearchInput): Promise<Produc
   if (!response.ok) throw new Error(`Earth Search returned ${response.status}`);
 
   const payload = (await response.json()) as StacSearchResponse;
-  const products = (payload.features ?? [])
+  return payload.features ?? [];
+}
+
+export async function searchEarthSearch(input: EarthSearchInput): Promise<Product[]> {
+  // A rectangle crossing +/-180 is represented as an unwrapped bbox by the
+  // map so area calculations stay narrow. Query each legal half separately.
+  const features = (await Promise.all(splitBBox(input.bbox).map((bbox) => searchEarthSearchBox(input, bbox))))
+    .flat()
+    .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index);
+  const products = features
     .map((item, index) => normalizeItem(item, index))
     .filter((product): product is Product => product !== null);
   products.forEach((product) => remoteProducts.set(product.id, product));

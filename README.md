@@ -11,7 +11,9 @@
 - 💼 **增值服务** - 提供变化检测、地物分类、目标提取等分析服务
 - 🌓 **明暗主题** - 支持亮色/暗色主题切换
 - 🌐 **多语言支持** - 中英文双语界面
-- 🔌 **公开数据 Provider Gateway** - 可通过服务端 STAC 网关接入真实 Sentinel-2 数据，并为后续商业供应商适配器预留统一入口
+- 🔌 **公开数据 Provider Gateway** - 通过服务端 STAC 网关接入真实 Sentinel-2 数据，并为后续商业供应商适配器预留统一入口
+- 🧭 **全球行政区目录** - 使用版本化 geoBoundaries gbOpen，支持 ADM0-ADM3 级联和真实边界范围
+- 🧾 **业务基础数据模型** - Supabase 迁移覆盖图源、供应商产品/报价、订单明细、分析作业、钱包和支付事件
 
 ## 技术栈
 
@@ -23,13 +25,13 @@
 - **3D 可视化**: Three.js
 - **动画**: Framer Motion
 - **状态管理**: React Context
-- **代码质量**: ESLint + Prettier + TypeScript Strict Mode
+- **代码质量**: ESLint + Prettier + TypeScript（strict 逐步开启）
 
 ## 快速开始
 
 ### 前置要求
 
-- Node.js >= 18
+- Node.js >= 22.13
 - npm/pnpm/yarn
 
 ### 安装依赖
@@ -116,13 +118,15 @@ npm run type-check
 cp .env.example .env
 ```
 
-主要环境变量：
+主要环境变量（公开构建配置）：
 - `VITE_API_BASE_URL` - API 服务地址
 - `VITE_MAP_STYLE_URL` - 地图样式 URL
 - `VITE_CARTO_API_KEY` - 可选的 Carto 公共地图 Key；在 Carto Dashboard 的 API Keys 中创建，并限制允许的域名
 - `VITE_ENABLE_MOCK_DATA` - 是否使用 mock 数据
 
-地图图层说明：地图右下角“切换图层”提供 Carto、OpenFreeMap、OpenStreetMap 三种底图，以及 NASA、Sentinel-2、Esri、AICGIS、天地图影像图层。AICGIS 通过 `VITE_AICGIS_TILES_URL` 配置瓦片模板；天地图通过 `VITE_TIANDITU_TOKEN` 配置官方 Token，未配置凭据时入口会自动置灰。未配置 `VITE_CARTO_API_KEY` 时，Carto 入口会自动使用 OpenFreeMap 作为免费回退，避免出现空白地图。Google Earth、吉林一号、四维高景等商业图源仅在取得授权并配置专用服务后接入。
+服务端运行配置（Supabase Secret Key、认证会话、COS、供应商和支付密钥）只能写入腾讯云服务器的 `/etc/starsyun/starsyun.env`，详见 [接入交接清单](docs/INTEGRATION_HANDOFF.md)。
+
+地图图层说明：地图右下角“切换图层”提供 Carto、OpenFreeMap、OpenStreetMap 三种底图，以及 NASA、Sentinel-2、Esri、AICGIS、天地图影像图层。AICGIS 通过 `VITE_AICGIS_TILES_URL` 配置瓦片模板；天地图通过 `VITE_TIANDITU_TOKEN` 配置官方 Token，未配置凭据时入口会自动置灰。未配置 `VITE_CARTO_API_KEY` 时，Carto 入口会自动使用 OpenFreeMap 作为免费回退，避免出现空白地图。Google Earth、吉林一号、四维高景等商业图源仅在取得授权并配置专用服务后接入。接口、许可和接入门槛见 [图源清单](docs/MAP_SOURCES.md)。
 
 可选影像瓦片地址：`VITE_SENTINEL2_TILES_URL`、`VITE_ESRI_IMAGERY_TILES_URL`。如服务商调整访问策略，可通过环境变量替换，避免修改前端代码。
 

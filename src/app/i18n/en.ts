@@ -1,8 +1,8 @@
 import type { Translation } from './zh';
 
 export const en: Translation = {
-  brand: 'OrbitData',
-  brandCn: 'OrbitData',
+  brand: 'starsyun',
+  brandCn: 'starsyun',
   nav: {
     home: 'Home',
     explore: 'Data Explorer',
@@ -56,7 +56,7 @@ export const en: Translation = {
     hotSatellitesSub: 'Leading commercial constellations, worldwide',
     solutionsTitle: 'Industry Solutions',
     solutionsSub: 'Spatial intelligence for real-world operations',
-    advantagesTitle: 'Why OrbitData',
+    advantagesTitle: 'Why starsyun',
     processTitle: 'Procurement Flow',
     processSub: 'From area selection to delivery, fully online',
     demandTitle: 'Submit Your Requirement',

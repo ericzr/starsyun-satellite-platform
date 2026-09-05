@@ -1,6 +1,6 @@
 export const zh = {
-  brand: 'OrbitData',
-  brandCn: '星图数据商城',
+  brand: 'starsyun',
+  brandCn: 'starsyun',
   nav: {
     home: '首页',
     explore: '地图数据中心',

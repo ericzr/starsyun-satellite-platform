@@ -3,16 +3,18 @@ import { useNavigate } from 'react-router';
 import { CreditCard, ArrowLeft } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useCart } from '../context/CartContext';
+import { VALUE_ADDED_SERVICES } from '../data/products';
 import { Button } from '../components/ui/button';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Label } from '../components/ui/label';
 import { fmtCny, fmtCnyEn } from '../lib/pricing';
 
 export function Checkout() {
-  const { t, lang } = useI18n();
+  const { lang } = useI18n();
   const navigate = useNavigate();
   const { items, cartTotal, createOrder } = useCart();
   const [paymentMethod, setPaymentMethod] = useState<'alipay' | 'wechat' | 'bank'>('alipay');
+  const mockCheckoutEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
 
   const money = (v: number) => (lang === 'zh' ? fmtCny(v) : fmtCnyEn(v));
   const cny = lang === 'zh' ? '元' : 'CNY';
@@ -28,10 +30,33 @@ export function Checkout() {
     return null;
   }
 
+  // The local cart is still useful for the prototype, but it must never create
+  // a fake paid order in production before the server payment flow is enabled.
+  if (!mockCheckoutEnabled) {
+    return (
+      <div className="flex h-full items-center justify-center px-6">
+        <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 text-center">
+          <h1 className="text-xl">{lang === 'zh' ? '在线结算尚未开放' : 'Online checkout is not available yet'}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {lang === 'zh' ? '该产品需要先确认授权、价格和交付条款，请提交询价由工作人员处理。' : 'Please submit an inquiry so we can confirm licensing, pricing, and delivery terms.'}
+          </p>
+          <div className="mt-5 flex justify-center gap-3">
+            <Button variant="outline" onClick={() => navigate('/cart')}>{lang === 'zh' ? '返回购物车' : 'Back to cart'}</Button>
+            <Button onClick={() => navigate('/inquiry/new')}>{lang === 'zh' ? '提交询价' : 'Submit inquiry'}</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const processLevelLabels = {
     raw: lang === 'zh' ? '原始数据' : 'Raw Data',
     standard: lang === 'zh' ? '标准处理' : 'Standard',
     analysis: lang === 'zh' ? '分析就绪' : 'Analysis Ready',
+    L1: lang === 'zh' ? 'L1 原始数据' : 'L1 Raw Data',
+    L2: lang === 'zh' ? 'L2 标准产品' : 'L2 Standard Product',
+    L3: lang === 'zh' ? 'L3 正射影像' : 'L3 Orthorectified',
+    L4: lang === 'zh' ? 'L4 增值产品' : 'L4 Value-Added',
   };
 
   return (
@@ -55,7 +80,7 @@ export function Checkout() {
               <div className="space-y-3">
                 {items.map((item) => (
                   <div
-                    key={`${item.product.id}-${item.processLevel}`}
+                    key={`${item.product.id}-${item.processLevel}-${(item.services ?? []).join('-')}`}
                     className="flex items-center justify-between border-b border-border pb-3 last:border-0"
                   >
                     <div className="flex-1">
@@ -65,6 +90,11 @@ export function Checkout() {
                       <p className="text-xs text-muted-foreground">
                         {processLevelLabels[item.processLevel]} × {item.quantity}
                       </p>
+                      {(item.services ?? []).length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {lang === 'zh' ? '增值服务' : 'Services'}: {(item.services ?? []).map((id) => VALUE_ADDED_SERVICES.find((service) => service.id === id)?.[lang === 'zh' ? 'name' : 'nameEn'] ?? id).join(', ')}
+                        </p>
+                      )}
                     </div>
                     <p className="font-mono text-sm">
                       {money(item.price)} {cny}
@@ -79,7 +109,9 @@ export function Checkout() {
               <h3 className="tech-label mb-4 text-xs text-muted-foreground">
                 {lang === 'zh' ? '支付方式' : 'Payment Method'}
               </h3>
-              <RadioGroup value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as any)}>
+              <RadioGroup value={paymentMethod} onValueChange={(v) => {
+                if (v === 'alipay' || v === 'wechat' || v === 'bank') setPaymentMethod(v);
+              }}>
                 <div className="flex items-center space-x-2 rounded border border-border p-3">
                   <RadioGroupItem value="alipay" id="alipay" />
                   <Label htmlFor="alipay" className="flex-1 cursor-pointer">

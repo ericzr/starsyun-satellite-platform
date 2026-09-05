@@ -1,9 +1,11 @@
 export interface GlobalState {
+  id: string;
   name: string;
   stateCode?: string;
 }
 
 export interface GlobalCountry {
+  id: string;
   name: string;
   iso2: string;
   iso3: string;
@@ -18,271 +20,117 @@ export interface GlobalCity {
   lon: number;
   bbox?: [number, number, number, number];
   boundary?: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
-  administrativeType?: string;
+  level?: 0 | 1 | 2 | 3;
+  parentId?: string;
+  countryIso3?: string;
 }
 
-const COUNTRIES_URL = 'https://countriesnow.space/api/v0.1/countries/states';
-const CITIES_URL = 'https://countriesnow.space/api/v0.1/countries/state/cities/q';
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
-const COUNTRIES_CACHE_KEY = 'starsyun-admin-countries-v2';
+type AdminArea = {
+  id: string;
+  countryIso2?: string;
+  countryIso3: string;
+  level: 0 | 1 | 2 | 3;
+  parentId?: string;
+  nameEn: string;
+  nameLocal: Record<string, string>;
+  centroid?: [number, number];
+  bbox?: [number, number, number, number];
+  geometry?: GeoJSON.Geometry;
+};
 
-function normalizePlaceName(value: string) {
-  return value
-    .trim()
-    .replace(/[\u2018\u2019']/g, '')
-    .replace(/\s+(city|shi|municipality|district|county|prefecture|region)$/i, '')
-    .replace(/(市|区|县|州|省|自治区|特别行政区)$/u, '')
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
-}
+const API = '/api/admin/areas';
+const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v3';
 
-function placeKey(value: string) {
-  return normalizePlaceName(value).replace(/\s+/g, '');
-}
-
-function dedupePlaces(names: string[], country: string, state: string) {
-  const seen = new Set<string>();
-  const stateKey = placeKey(state);
-  const countryKey = placeKey(country);
-  return names
-    .map((name) => name.trim())
-    .filter(Boolean)
-    .filter((name) => {
-      const key = placeKey(name);
-      if (!key || key === stateKey || key === countryKey || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
-
-function isSecondLevelName(name: string) {
-  const value = name.trim().toLowerCase();
-  if (!value) return false;
-  // CountriesNow returns a flat city list; exclude common third-level
-  // suffixes so districts/towns do not leak into the second-level selector.
-  return !/(district|county|town|village|borough|suburb|quarter|banner|旗|县|区|镇|乡|街道)$/i.test(value);
-}
-
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 10000);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timeout);
+function localizedName(area: AdminArea, lang: 'zh' | 'en') {
+  if (lang === 'zh') {
+    return area.nameLocal['zh-Hans'] || area.nameLocal.zh || area.nameLocal['name:zh'] || area.nameEn;
   }
+  return area.nameLocal.en || area.nameEn;
 }
 
-/** Loads the global country and first-level administrative directory once per browser session. */
-export async function fetchGlobalCountries(): Promise<GlobalCountry[]> {
+function feature(geometry?: GeoJSON.Geometry) {
+  return geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon')
+    ? { type: 'Feature', properties: {}, geometry } as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>
+    : undefined;
+}
+
+function cityFromArea(area: AdminArea, lang: 'zh' | 'en'): GlobalCity {
+  const [lon, lat] = area.centroid ?? [NaN, NaN];
+  return {
+    id: area.id,
+    name: localizedName(area, lang),
+    displayName: area.nameEn,
+    lat,
+    lon,
+    bbox: area.bbox,
+    boundary: feature(area.geometry),
+    level: area.level,
+    parentId: area.parentId,
+    countryIso3: area.countryIso3,
+  };
+}
+
+async function request(path = '') {
+  const response = await fetch(`${API}${path}`, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`Administrative directory unavailable (${response.status})`);
+  return response.json() as Promise<{ areas?: AdminArea[]; area?: AdminArea }>;
+}
+
+async function list(params: Record<string, string | number>) {
+  const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]));
+  const payload = await request(`?${query.toString()}`);
+  return payload.areas ?? [];
+}
+
+/** Country directory comes from the versioned platform dataset, never browser-side geocoders. */
+export async function fetchGlobalCountries(lang: 'zh' | 'en' = 'en'): Promise<GlobalCountry[]> {
   try {
-    const cached = sessionStorage.getItem(COUNTRIES_CACHE_KEY);
+    const cached = sessionStorage.getItem(`${COUNTRY_CACHE_KEY}:${lang}`);
     if (cached) return JSON.parse(cached) as GlobalCountry[];
   } catch {
-    // Storage can be disabled; continue with the network request.
+    // Disabled storage should not stop the directory request.
   }
-  const response = await fetchWithTimeout(COUNTRIES_URL, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`Administrative directory unavailable (${response.status})`);
-  const payload = await response.json() as { error: boolean; data?: Array<{ name: string; iso2: string; iso3: string; states?: GlobalState[] }> };
-  if (payload.error || !payload.data) throw new Error('Administrative directory returned an error');
-  const countries = payload.data.filter((country) => country.iso2 !== 'TW' && country.name.toLowerCase() !== 'taiwan').map((country) => ({
-    name: country.name,
-    iso2: country.iso2,
-    iso3: country.iso3,
-    states: country.states?.length ? country.states : [{ name: country.name }],
-  }));
+  const areas = await list({ level: 0, limit: 500 });
+  const countries = areas.map((area) => ({
+    id: area.id,
+    name: localizedName(area, lang),
+    iso2: area.countryIso2 ?? '',
+    iso3: area.countryIso3,
+    states: [],
+  })).filter((country) => country.iso3 && country.iso3 !== 'TWN' && country.iso2 !== 'TW');
   try {
-    sessionStorage.setItem(COUNTRIES_CACHE_KEY, JSON.stringify(countries));
+    sessionStorage.setItem(`${COUNTRY_CACHE_KEY}:${lang}`, JSON.stringify(countries));
   } catch {
-    // Storage can be disabled or quota-limited; the in-memory result is still valid.
+    // Continue without a client cache.
   }
   return countries;
 }
 
-/** Resolves second-level places for a selected state using OpenStreetMap's public geocoder. */
-export async function fetchGlobalCities(country: string, state: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity[]> {
-  // CountriesNow is fast and has broad global coverage. Use it as the
-  // directory source; resolve a selected item through Nominatim later for a
-  // localized name, exact center and boundary geometry.
-  try {
-    if (lang === 'zh') throw new Error('prefer localized geocoder');
-    const query = new URLSearchParams({ country, state });
-    const response = await fetchWithTimeout(`${CITIES_URL}?${query.toString()}`, { headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error('CountriesNow unavailable');
-    const payload = await response.json() as { error: boolean; data?: string[] };
-    if (!payload.error && payload.data?.length) {
-      return dedupePlaces(payload.data, country, state).filter(isSecondLevelName).map((name) => ({ id: `${country}:${state}:${name}`, name, displayName: name, lat: 0, lon: 0 }));
-    }
-  } catch {
-    // Try the geocoder below when the directory endpoint is unavailable.
-  }
-
-  // Nominatim provides localized names and stable place IDs. Prefer it so the
-  // second-level directory follows the site's language and does not expose
-  // duplicate suffix variants such as "Ordos" / "Ordos Shi".
-  try {
-    const query = new URLSearchParams({
-      format: 'jsonv2', addressdetails: '1', namedetails: '1', limit: '50',
-      country, state, featuretype: 'city',
-      'accept-language': lang === 'zh' ? 'zh-CN,en' : 'en',
-    });
-    const response = await fetchWithTimeout(`${NOMINATIM_URL}?${query.toString()}`, { headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error('Nominatim unavailable');
-    const payload = await response.json() as Array<{
-      place_id: number; display_name: string; name?: string; namedetails?: Record<string, string>;
-      lat: string; lon: string; boundingbox?: string[]; type?: string;
-    }>;
-    const seen = new Set<string>();
-    const cities = payload.map((place) => {
-      const name = lang === 'zh'
-        ? place.namedetails?.['name:zh'] || place.namedetails?.['name:zh-Hans'] || place.name || place.display_name.split(',')[0]
-        : place.name || place.display_name.split(',')[0];
-      const box = place.boundingbox?.map(Number);
-      return {
-        id: String(place.place_id), name, displayName: place.display_name,
-        lat: Number(place.lat), lon: Number(place.lon),
-        administrativeType: place.type,
-        bbox: box && box.length === 4 ? [box[2], box[0], box[3], box[1]] as [number, number, number, number] : undefined,
-    };
-    }).filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lon) && ['city', 'municipality', 'county', 'state_district'].includes(place.administrativeType ?? '')).filter((place) => {
-      const key = placeKey(place.name);
-      if (!key || seen.has(key) || key === placeKey(state) || key === placeKey(country)) return false;
-      seen.add(key);
-      return true;
-    });
-    if (cities.length) return cities;
-    throw new Error('Nominatim returned no cities');
-  } catch {
-    // Fall through to CountriesNow for countries/states not indexed by OSM.
-  }
-  const query = new URLSearchParams({ country, state });
-  const response = await fetchWithTimeout(`${CITIES_URL}?${query.toString()}`, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`City directory unavailable (${response.status})`);
-  const payload = await response.json() as { error: boolean; data?: string[] };
-  if (payload.error || !payload.data?.length) throw new Error('City directory returned no cities');
-  return dedupePlaces(payload.data, country, state).filter(isSecondLevelName).map((name) => ({ id: `${country}:${state}:${name}`, name, displayName: name, lat: 0, lon: 0 }));
+export async function fetchGlobalStates(countryIso3: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalState[]> {
+  const areas = await list({ country: countryIso3, level: 1, limit: 5000 });
+  return areas.map((area) => ({ id: area.id, name: localizedName(area, lang) }));
 }
 
-/** Resolves third-level districts for a selected city/state path via Nominatim. */
-export async function fetchGlobalDistricts(country: string, state: string, city: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity[]> {
-  const query = new URLSearchParams({
-    format: 'jsonv2', addressdetails: '1', namedetails: '1', limit: '50',
-    q: `${city}, ${state}, ${country}`,
-    'accept-language': lang === 'zh' ? 'zh-CN,en' : 'en',
-  });
-  const response = await fetchWithTimeout(`${NOMINATIM_URL}?${query.toString()}`, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error('District directory unavailable');
-  const payload = await response.json() as Array<{
-    place_id: number; display_name: string; name?: string; namedetails?: Record<string, string>;
-    lat: string; lon: string; boundingbox?: string[]; type?: string;
-  }>;
-  const accepted = new Set(['district', 'suburb', 'quarter', 'municipality', 'county', 'town', 'village', 'borough']);
-  const seen = new Set<string>();
-  return payload.map((place) => {
-    const name = lang === 'zh'
-      ? place.namedetails?.['name:zh'] || place.namedetails?.['name:zh-Hans'] || place.name || place.display_name.split(',')[0]
-      : place.name || place.display_name.split(',')[0];
-    const box = place.boundingbox?.map(Number);
-    return {
-      id: String(place.place_id), name, displayName: place.display_name, lat: Number(place.lat), lon: Number(place.lon),
-      bbox: box && box.length === 4 ? [box[2], box[0], box[3], box[1]] as [number, number, number, number] : undefined,
-      administrativeType: place.type,
-    };
-  }).filter((place) => accepted.has(place.administrativeType ?? '') && Number.isFinite(place.lat) && Number.isFinite(place.lon)).filter((place) => {
-    const key = placeKey(place.name);
-    if (!key || seen.has(key) || key === placeKey(city) || key === placeKey(state) || key === placeKey(country)) return false;
-    seen.add(key);
-    return true;
-  });
+export async function fetchGlobalCities(parentId: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity[]> {
+  const areas = await list({ parent: parentId, level: 2, limit: 5000 });
+  return areas.map((area) => cityFromArea(area, lang));
 }
 
-/** Resolve a city from the directory only when the user selects it. */
-export async function geocodeGlobalCity(country: string, state: string, city: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity | null> {
-  const query = new URLSearchParams({
-    format: 'jsonv2',
-    addressdetails: '1',
-    namedetails: '1',
-    polygon_geojson: '1',
-    limit: '5',
-    q: `${city}, ${state}, ${country}`,
-    'accept-language': lang === 'zh' ? 'zh-CN,en' : 'en',
-  });
-  const response = await fetchWithTimeout(`${NOMINATIM_URL}?${query.toString()}`, {
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) return null;
-  const payload = await response.json() as Array<{
-    place_id: number;
-    display_name: string;
-    name?: string;
-    lat: string;
-    lon: string;
-    boundingbox?: string[];
-    address?: Record<string, string>;
-    geojson?: GeoJSON.Geometry;
-  }>;
-  const place = payload.find((candidate) => {
-    const address = candidate.address as Record<string, string> | undefined;
-    return address && (address.state || address.province || address.region);
-  }) ?? payload[0];
-  if (!place) return null;
-  const box = place.boundingbox?.map(Number);
-  const geometry = place.geojson && (place.geojson.type === 'Polygon' || place.geojson.type === 'MultiPolygon')
-    ? { type: 'Feature', properties: {}, geometry: place.geojson } as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>
-    : undefined;
-  return {
-    id: String(place.place_id),
-    name: city,
-    displayName: place.display_name,
-    lat: Number(place.lat),
-    lon: Number(place.lon),
-    bbox: box && box.length === 4 ? [box[2], box[0], box[3], box[1]] as [number, number, number, number] : undefined,
-    boundary: geometry,
-  };
+export async function fetchGlobalDistricts(parentId: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity[]> {
+  const areas = await list({ parent: parentId, level: 3, limit: 5000 });
+  return areas.map((area) => cityFromArea(area, lang));
 }
 
-/** Resolve a first- or second-level administrative area with its real OSM boundary. */
-export async function geocodeAdministrativeArea(
-  country: string,
-  area: string,
-  lang: 'zh' | 'en' = 'en',
-): Promise<GlobalCity | null> {
-  const query = new URLSearchParams({
-    format: 'jsonv2',
-    addressdetails: '1',
-    namedetails: '1',
-    polygon_geojson: '1',
-    limit: '8',
-    q: `${area}, ${country}`,
-    'accept-language': lang === 'zh' ? 'zh-CN,en' : 'en',
-  });
-  const response = await fetchWithTimeout(`${NOMINATIM_URL}?${query.toString()}`, { headers: { Accept: 'application/json' } });
-  if (!response.ok) return null;
-  const payload = await response.json() as Array<{
-    place_id: number;
-    display_name: string;
-    name?: string;
-    namedetails?: Record<string, string>;
-    lat: string;
-    lon: string;
-    boundingbox?: string[];
-    geojson?: GeoJSON.Geometry;
-    type?: string;
-    class?: string;
-  }>;
-  const place = payload.find((item) => item.geojson && (item.geojson.type === 'Polygon' || item.geojson.type === 'MultiPolygon')) ?? payload[0];
-  if (!place) return null;
-  const box = place.boundingbox?.map(Number);
-  const geometry = place.geojson && (place.geojson.type === 'Polygon' || place.geojson.type === 'MultiPolygon')
-    ? { type: 'Feature', properties: {}, geometry: place.geojson } as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>
-    : undefined;
-  return {
-    id: String(place.place_id),
-    name: lang === 'zh' ? place.namedetails?.['name:zh'] || place.name || area : place.name || area,
-    displayName: place.display_name,
-    lat: Number(place.lat),
-    lon: Number(place.lon),
-    bbox: box && box.length === 4 ? [box[2], box[0], box[3], box[1]] as [number, number, number, number] : undefined,
-    boundary: geometry,
-  };
+/** Search the server-side ADM0-ADM3 directory without exposing database credentials. */
+export async function searchGlobalAdminAreas(query: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity[]> {
+  const normalized = query.trim();
+  if (normalized.length < 2) return [];
+  const areas = await list({ q: normalized, limit: 30 });
+  return areas.map((area) => cityFromArea(area, lang));
+}
+
+/** Fetches the selected versioned boundary only when it is needed for the map. */
+export async function getGlobalAdminArea(id: string, lang: 'zh' | 'en' = 'en'): Promise<GlobalCity | null> {
+  const payload = await request(`/${encodeURIComponent(id)}`);
+  return payload.area ? cityFromArea(payload.area, lang) : null;
 }

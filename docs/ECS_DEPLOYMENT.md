@@ -32,7 +32,7 @@ StarSyun Node service (127.0.0.1:3000)
 - 公网入口：`https://starsyun.com`，Nginx 终止 TLS 并反向代理到 `127.0.0.1:3000`。
 - 应用：Ubuntu + Node.js 22 + systemd，运行用户为 `starsyun`。
 - 安全组：公网仅开放 80/443；SSH 22 使用管理 IP 白名单；应用、数据库和 Redis 端口不对公网开放。
-- 数据底座：Supabase Pro，新加坡 AWS 区域；服务端使用新 API key 模式。
+- 数据底座：Supabase 新加坡 AWS 区域，当前按量计费；服务端使用新 API key 模式。
 - 发布目录：`/srv/starsyun/releases/<git-sha>`，`/srv/starsyun/current` 为当前版本软链接。
 - 线上探针：`/healthz` 与 `/readyz` 已通过；Stripe 尚未启用，属于后续支付主线。
 
@@ -63,7 +63,7 @@ tar -czf starsyun-release.tgz dist dist-server package.json scripts supabase/mig
 
 发布前可运行 npm run check:release 检查迁移文件和构建产物；在服务器准备好运行时文件后，再用 npm run check:release -- --runtime-env=/etc/starsyun/starsyun.env 检查必需配置、生产 CORS 和 COS 变量（不会打印密钥）。
 
-服务器运行时可执行 `npm run check:supabase`，它只验证 `001` 至 `006` 对应的五张业务表与 `orders` 的支付字段是否可通过 Supabase REST 访问，不会读取或输出业务数据。`004` 是订单表字段迁移，并不创建独立支付表。
+服务器运行时可执行 `npm run check:supabase`，它只验证 `001` 至 `009` 对应的业务表、受保护 RPC 与 `orders` 的支付字段是否可通过 Supabase REST 访问，不会读取或输出业务数据。`004` 是订单表字段迁移，并不创建独立支付表；`007` 增加行政区、图源、供应商、分析和钱包的生产基础表，`008` 增加原子账本/订单状态函数，`009` 允许报价订单保存商品快照明细。
 
 构建产物中：
 

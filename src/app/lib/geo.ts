@@ -34,9 +34,42 @@ export async function parseVectorFile(file: File): Promise<BBox> {
       });
   });
   if (!points.length) throw new Error('No valid coordinates found in vector file');
-  const lngs = points.map(([lng]) => lng);
   const lats = points.map(([, lat]) => lat);
-  return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
+  return [
+    ...minimalLongitudeBounds(points.map(([lng]) => lng)),
+    Math.min(...lats),
+    Math.max(...lats),
+  ] as BBox;
+}
+
+/**
+ * Find the shortest longitude interval containing all points. This keeps a
+ * KML/KMZ polygon around 179E/-179W narrow instead of expanding it to 358°.
+ * The returned east value may be unwrapped (for example 181) so downstream
+ * area calculations retain the intended span.
+ */
+function minimalLongitudeBounds(longitudes: number[]): [number, number] {
+  const normalized = longitudes
+    .map((longitude) => ((longitude % 360) + 360) % 360)
+    .sort((a, b) => a - b);
+  if (normalized.length === 1) {
+    const west = normalized[0] > 180 ? normalized[0] - 360 : normalized[0];
+    return [west, west + 0.0001];
+  }
+  let largestGap = -1;
+  let gapIndex = 0;
+  for (let index = 0; index < normalized.length; index += 1) {
+    const next = index === normalized.length - 1 ? normalized[0] + 360 : normalized[index + 1];
+    const gap = next - normalized[index];
+    if (gap > largestGap) {
+      largestGap = gap;
+      gapIndex = index;
+    }
+  }
+  const west360 = normalized[(gapIndex + 1) % normalized.length];
+  const span = Math.max(0.0001, 360 - largestGap);
+  const west = west360 > 180 ? west360 - 360 : west360;
+  return [west, west + span];
 }
 
 const EARTH_A = 6378.137; // WGS84 semi-major axis, km
@@ -57,11 +90,12 @@ export function bboxAreaKm2(b: BBox): number {
   const north = deg2rad(Math.max(-90, Math.min(90, n)));
   // MapLibre can return longitudes outside [-180, 180] when the world wraps;
   // drawing keeps those unwrapped values so the measured span remains stable.
-  const originalSpan = Math.abs(e - w);
-  // Drawing normalizes antimeridian-crossing boxes into an unwrapped range
-  // (e.g. 179..181), so preserve the explicit span rather than guessing a
-  // complement for broad, intentional rectangles.
-  const longitudeSpan = Math.min(originalSpan, 360);
+  // A box with east < west and both longitudes in the canonical range is a
+  // compact antimeridian-crossing box (for example 179..-179 means 2°).
+  // Drawn boxes may instead use an unwrapped east value such as 181, which is
+  // already an explicit narrow span and must be preserved.
+  const rawSpan = e >= w ? e - w : e + 360 - w;
+  const longitudeSpan = Math.min(Math.max(rawSpan, 0), 360);
   const dLon = deg2rad(longitudeSpan);
   const eccentricity = Math.sqrt(EARTH_E2);
   const stripArea = (latitude: number) => {
@@ -85,24 +119,69 @@ export function intersectBBox(a: BBox, b: BBox): BBox | null {
 }
 
 /**
+ * Split a longitude range into valid WGS84 ranges. MapLibre keeps a narrow
+ * rectangle drawn across the antimeridian unwrapped (for example 179..181)
+ * so its area remains correct; network providers still require -180..180.
+ */
+export function splitBBox(b: BBox): BBox[] {
+  const [rawWest, rawSouth, rawEast, rawNorth] = b;
+  // Preserve the semantic of an antimeridian-crossing WGS84 bbox when east is
+  // numerically smaller than west (179..-179). For unwrapped drawn boxes such
+  // as 179..181, the ordinary east-west difference is already correct.
+  const rawSpan = rawEast >= rawWest ? rawEast - rawWest : rawEast + 360 - rawWest;
+  const span = Math.min(Math.max(rawSpan, 0), 360);
+  const south = Math.max(-90, Math.min(90, Math.min(rawSouth, rawNorth)));
+  const north = Math.max(-90, Math.min(90, Math.max(rawSouth, rawNorth)));
+  if (span >= 360) return [[-180, south, 180, north]];
+  const normalizedWest = ((rawWest + 180) % 360 + 360) % 360 - 180;
+  const normalizedEast = normalizedWest + span;
+  if (normalizedEast <= 180) return [[normalizedWest, south, normalizedEast, north]];
+  return [
+    [normalizedWest, south, 180, north],
+    [-180, south, normalizedEast - 360, north],
+  ].filter((part) => part[2] - part[0] > 0.0000001) as BBox[];
+}
+
+/**
  * Coverage ratio of `target` covered by `image`, in [0,1].
  * i.e. intersection area / target area.
  */
 export function coverageRatio(target: BBox, image: BBox): number {
-  const inter = intersectBBox(target, image);
-  if (!inter) return 0;
   const t = bboxAreaKm2(target);
   if (t === 0) return 0;
-  return Math.min(1, bboxAreaKm2(inter) / t);
+  const covered = splitBBox(target).reduce((sum, targetSegment) => (
+    sum + splitBBox(image).reduce((imageSum, imageSegment) => {
+      const inter = intersectBBox(targetSegment, imageSegment);
+      return imageSum + (inter ? bboxAreaKm2(inter) : 0);
+    }, 0)
+  ), 0);
+  return Math.min(1, covered / t);
 }
 
 /** Does image bbox intersect the target at all? */
 export function intersects(a: BBox, b: BBox): boolean {
-  return intersectBBox(a, b) !== null;
+  return splitBBox(a).some((aSegment) => splitBBox(b).some((bSegment) => intersectBBox(aSegment, bSegment) !== null));
 }
 
-export function bboxToPolygon(b: BBox): GeoJSON.Feature<GeoJSON.Polygon> {
+export function bboxToPolygon(b: BBox): GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> {
   const [w, s, e, n] = b;
+  const boxes = splitBBox(b);
+  if (boxes.length > 1) {
+    return {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'MultiPolygon',
+        coordinates: boxes.map(([west, south, east, north]) => [[
+          [west, south],
+          [east, south],
+          [east, north],
+          [west, north],
+          [west, south],
+        ]]),
+      },
+    };
+  }
   return {
     type: 'Feature',
     properties: {},
@@ -136,7 +215,10 @@ export function geometryAreaKm2(
     for (let index = 0; index < ring.length - 1; index += 1) {
       const [lon1, lat1] = ring[index];
       const [lon2, lat2] = ring[index + 1];
-      area += deg2rad(lon2 - lon1) * (Math.sin(deg2rad(lat1)) + Math.sin(deg2rad(lat2)));
+      // Use the shortest longitude delta so a ring crossing the date line is
+      // measured as a narrow polygon instead of almost the whole globe.
+      const deltaLon = ((lon2 - lon1 + 540) % 360) - 180;
+      area += deg2rad(deltaLon) * (Math.sin(deg2rad(lat1)) + Math.sin(deg2rad(lat2)));
     }
     return Math.abs(area * radius * radius / 2);
   };
@@ -156,30 +238,76 @@ export function fmtArea(km2: number): string {
   return km2.toFixed(2);
 }
 
-/** Parse latitude/longitude text in either "lat, lon" or "lon, lat" order. */
+/** Parse latitude/longitude text in either "lat, lon" or "lon, lat" order.
+ *
+ * Direction letters are tokenized before reading the numbers. This matters
+ * for inputs such as `N31.2 E121.4`: a greedy regex can mistake the `E` for
+ * the suffix of the first value and silently lose the longitude sign.
+ */
 export function parseCoords(input: string): [number, number] | null {
-  const normalized = input.trim().replace(/^[gG]\s*/, '').replace(/[，、]/g, ',').replace(/[º°]/g, '').replace(/\s+/g, ' ');
-  const match = normalized.match(/^([NSWE])?\s*([-+]?\d+(?:\.\d+)?)\s*([NSWE])?\s*[,; ]\s*([NSWE])?\s*([-+]?\d+(?:\.\d+)?)\s*([NSWE])?$/i);
-  if (!match) return null;
-  const first = Number(match[2]);
-  const second = Number(match[5]);
-  const firstHemisphere = match[1]?.toUpperCase() || match[3]?.toUpperCase();
-  const secondHemisphere = match[4]?.toUpperCase() || match[6]?.toUpperCase();
-  const signed = (value: number, hemisphere?: string) => /[SW]/.test(hemisphere || '') ? -Math.abs(value) : value;
-  const values = [signed(first, firstHemisphere), signed(second, secondHemisphere)];
-  if (values.length !== 2 || values.some((value) => !Number.isFinite(value))) return null;
-  const [a, b] = values;
-  if (firstHemisphere && secondHemisphere) {
-    const latFirst = /[NS]/.test(firstHemisphere) && /[EW]/.test(secondHemisphere);
-    const lonFirst = /[EW]/.test(firstHemisphere) && /[NS]/.test(secondHemisphere);
-    if (latFirst) return Math.abs(a) <= 90 && Math.abs(b) <= 180 ? [b, a] : null;
-    if (lonFirst) return Math.abs(b) <= 90 && Math.abs(a) <= 180 ? [a, b] : null;
+  const normalized = input.trim()
+    .replace(/^geo:\s*/i, '')
+    .replace(/^\(?\s*(?:[gG]\s*)?/, '')
+    .replace(/\s*\)?$/, '')
+    .replace(/[，、]/g, ',')
+    .replace(/[º°]/g, '')
+    // Labels are presentation-only; the component parser below retains any
+    // direction letter immediately before or after the number.
+    .replace(/(?:\b(?:latitude|lat)|纬度)\s*[:=]?\s*/gi, '')
+    .replace(/(?:\b(?:longitude|lon|lng)|经度)\s*[:=]?\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return null;
+
+  // Make `N31.2`, `31.2N`, and comma/semicolon/slash separated values use the
+  // same token stream. The only accepted letters are compass hemispheres.
+  const tokens = normalized
+    .replace(/([NSEW])/gi, ' $1 ')
+    .replace(/[,;/]/g, ' ')
+    .split(/\s+/u)
+    .filter(Boolean);
+  const components: Array<{ value: number; hemisphere?: string }> = [];
+  let index = 0;
+  while (index < tokens.length && components.length < 2) {
+    let hemisphere: string | undefined;
+    let valueToken = tokens[index];
+    if (/^[NSEW]$/iu.test(valueToken)) {
+      hemisphere = valueToken.toUpperCase();
+      index += 1;
+      valueToken = tokens[index] ?? '';
+    }
+    if (!/^[+-]?\d+(?:\.\d+)?$/u.test(valueToken)) return null;
+    const value = Number(valueToken);
+    if (!Number.isFinite(value)) return null;
+    index += 1;
+    if (!hemisphere && /^[NSEW]$/iu.test(tokens[index] ?? '')) {
+      hemisphere = tokens[index].toUpperCase();
+      index += 1;
+    }
+    components.push({ value, hemisphere });
   }
-  if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
+  if (components.length !== 2 || index !== tokens.length) return null;
+
+  const signed = ({ value, hemisphere }: (typeof components)[number]) => {
+    if (!hemisphere) return value;
+    return /[SW]/u.test(hemisphere) ? -Math.abs(value) : Math.abs(value);
+  };
+  const first = signed(components[0]);
+  const second = signed(components[1]);
+  const firstHemisphere = components[0].hemisphere;
+  const secondHemisphere = components[1].hemisphere;
+  if (firstHemisphere && secondHemisphere) {
+    const latFirst = /[NS]/u.test(firstHemisphere) && /[EW]/u.test(secondHemisphere);
+    const lonFirst = /[EW]/u.test(firstHemisphere) && /[NS]/u.test(secondHemisphere);
+    if (latFirst) return Math.abs(first) <= 90 && Math.abs(second) <= 180 ? [second, first] : null;
+    if (lonFirst) return Math.abs(second) <= 90 && Math.abs(first) <= 180 ? [first, second] : null;
+    return null;
+  }
+  if (Math.abs(first) <= 90 && Math.abs(second) <= 180) {
     // The UI documents latitude first, so keep that as the default for the
     // ambiguous case where both values fall inside +/-90 degrees.
-    return [b, a];
+    return [second, first];
   }
-  if (Math.abs(a) <= 180 && Math.abs(b) <= 90) return [a, b];
+  if (Math.abs(first) <= 180 && Math.abs(second) <= 90) return [first, second];
   return null;
 }

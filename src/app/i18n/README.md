@@ -26,7 +26,7 @@
 
 ```typescript
 export const fr = {
-  brand: 'OrbitData',
+  brand: 'starsyun',
   brandCn: 'Plateforme de Données Satellitaires',
   nav: {
     home: 'Accueil',
@@ -91,7 +91,7 @@ const dictionaries: Record<Lang, Dict> = {
 
 | 部分 | 说明 | 示例 |
 |------|------|------|
-| `brand` | 品牌名称 | `'OrbitData'` |
+| `brand` | 品牌名称 | `'starsyun'` |
 | `nav` | 导航栏 | `home`, `explore`, `admin` |
 | `common` | 通用文案 | 按钮、标签、状态等 |
 | `home` | 首页内容 | Hero、分类、优势等 |
@@ -277,4 +277,4 @@ itemCount: (n: number) => n === 1 ? '1 item' : `${n} items`
 ---
 
 **最后更新**: 2026-07-28
-**维护者**: OrbitData 开发团队
+**维护者**: starsyun 开发团队

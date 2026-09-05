@@ -7,7 +7,7 @@
 ## 当前基线（已完成）
 
 - 腾讯云新加坡 Node/Nginx 服务已运行，正式域名 HTTPS 可访问。
-- Supabase 新加坡项目已连接，生产迁移 `001` 至 `006` 已执行。
+- Supabase 新加坡项目已连接，生产迁移 `001` 至 `006` 已执行；`007` 至 `009` 需要在本轮上线前执行并验收。
 - 客户注册、登录、会话和管理员登录已走服务端网关。
 - `/healthz` 返回 200，`/readyz` 已达到 ready；Stripe 尚未启用属于预期状态。
 - 服务器运行时密钥只放在 `/etc/starsyun/starsyun.env`，没有提交到 Git。
@@ -15,20 +15,29 @@
 
 ## P0：真实交易上线前必须完成
 
+本轮新增的正式数据和工作流基础见：
+
+- [全球行政区数据方案](./GLOBAL_ADMIN_BOUNDARIES.md)
+- [图源接口与接入清单](./MAP_SOURCES.md)
+- [真实业务工作流](./REAL_BUSINESS_WORKFLOWS.md)
+
 ### 1. 真实数据产品目录
 
 - [ ] 把演示 `PRODUCTS` 与真实产品目录分开，页面必须标记“示例”或“可购买”。
 - [ ] 建立统一产品字段：供应商、产品 ID、采集时间、几何范围、分辨率、云量、传感器、处理级别、授权、币种、价格模式和交付 SLA。
 - [ ] 首批保持开放数据：Earth Search、Copernicus、NASA/USGS；供应商 API 失败时显示降级状态，不伪造库存。
 - [ ] 为每个供应商增加配额、超时、重试、原始响应留存和服务条款记录。
+- [ ] 按顺序执行 `007_create_platform_foundation.sql`、`008_business_workflow_functions.sql`、`009_order_quote_items.sql` 与 `010_create_public_downloads.sql`，导入至少中国、阿联酋、新加坡和首批全球 ADM0-ADM3 行政区。
+- [x] 将行政区页面切换到 `/api/admin/areas`，移除生产路径的 CountriesNow/Nominatim 直连。
 
 ### 2. 询价、报价、订单闭环
 
 - [ ] 管理员可以从询价创建、发送、撤回和过期报价。
-- [ ] 接受报价必须冻结金额、币种、税费、交付天数和条款版本。
-- [ ] 订单状态严格经过 `pending_payment → paid → fulfillment → delivered`，取消和失败状态可审计。
+- [ ] 接受报价必须冻结金额、币种、税费、交付天数和条款版本；任务拍摄订单在供应商下单前调用 `/api/wallet/holds` 或核验对公预付款。
+- [x] 订单状态严格经过 `pending_payment → paid → fulfillment → delivered`，取消和失败状态可审计（`transition_order` RPC + `order_events`）。
 - [ ] 所有写操作增加 request id、幂等键和操作者记录，避免重复报价、重复订单和重复支付。
 - [ ] 先采用“报价后人工确认/对公转账”也可以上线；Stripe 仅在 webhook、退款和对账验收后开放。
+- [ ] 历史存档和任务拍摄使用不同的业务类型与供应商订单状态；不能用演示产品直接生成成交库存。
 
 ### 3. 文件交付与存储分层
 
@@ -47,7 +56,8 @@
 - [ ] 关闭密码 SSH，使用密钥登录；定期轮换服务器密码、Supabase Secret Key、会话密钥和供应商凭据。
 - [ ] `ALLOWED_ORIGINS` 只允许正式域名；生产禁止 `VITE_ENABLE_MOCK_DATA=true`。
 - [ ] 管理员会话使用 HttpOnly、Secure、SameSite Cookie；所有管理接口继续服务端鉴权。
-- [ ] 补充 CSP、HSTS、审计日志、异常告警和登录失败限流。
+- [x] 补充 CSP Report-Only、HSTS、审计日志和登录失败基础限流；正式启用 CSP 前需在真实图源清单稳定后把 Report-Only 切换为强制策略。
+- [ ] 钱包入账、余额冻结、退款只允许服务端经过验证的支付/核销事件写入。
 
 ## P1：Beta 稳定性
 
@@ -82,6 +92,12 @@
 - [ ] 将长时间供应商任务、影像处理和大文件同步拆到 Worker/队列，不阻塞 Web 进程。
 - [ ] 订单增加授权条款、税费、地区限制、最小起订面积、有效期和 SLA 版本。
 - [ ] 根据真实负载再引入 Supabase Read Replica、Redis、第二台 API 节点和灾备区域。
+
+### 供应商与分析业务
+
+- [ ] 先完成一个开放 STAC、一个商业聚合平台、一个光学直连供应商和一个 SAR 供应商的 sandbox 验收。
+- [ ] 将变化检测、分类、目标提取、时间序列和定制分析全部纳入 `analysis_jobs`，通过 Worker 执行并将结果写入 COS。
+- [ ] 建立供应商合同、区域授权、价格表、配额、SLA 和条款版本的后台维护页。
 
 ## 目前主线推进顺序
 

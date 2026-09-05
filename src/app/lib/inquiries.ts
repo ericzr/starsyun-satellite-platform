@@ -89,6 +89,14 @@ function inquiryItemApiUrl(id: string) {
   return `${inquiryApiUrl().replace(/\/$/, '')}/${encodeURIComponent(id)}`;
 }
 
+function mockFallbackEnabled() {
+  return import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
+}
+
+function serviceUnavailable() {
+  return new Error('询价服务暂不可用，请稍后重试');
+}
+
 export async function submitInquiry(data: InquiryDraftInput): Promise<InquirySubmission> {
   try {
     const response = await fetch(inquiryApiUrl(), {
@@ -104,13 +112,14 @@ export async function submitInquiry(data: InquiryDraftInput): Promise<InquirySub
       return { inquiry: payload.inquiry, persisted: true };
     }
 
-    if (response.status >= 400 && response.status < 500 && response.status !== 404 && response.status !== 429) {
+    if (response.status >= 400 && response.status < 500) {
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       throw new Error(payload?.error || 'inquiry was rejected');
     }
+    if (!mockFallbackEnabled()) throw serviceUnavailable();
   } catch (error) {
     // Network failures may have browser-specific messages; validation/API errors must remain visible.
-    if (!(error instanceof TypeError)) throw error;
+    if (!(error instanceof TypeError) || !mockFallbackEnabled()) throw error instanceof TypeError ? serviceUnavailable() : error;
   }
 
   return { inquiry: addInquiry(data), persisted: false };
@@ -125,8 +134,9 @@ export async function loadCustomerInquiries(email?: string, phone?: string): Pro
       return { inquiries: payload.inquiries, persisted: true };
     }
   } catch (error) {
-    if (!(error instanceof TypeError)) throw error;
+    if (!(error instanceof TypeError) || !mockFallbackEnabled()) throw error instanceof TypeError ? serviceUnavailable() : error;
   }
+  if (!mockFallbackEnabled()) throw serviceUnavailable();
   return {
     inquiries: loadInquiries().filter((inquiry) => inquiry.email === email || inquiry.phone === phone),
     persisted: false,
@@ -150,8 +160,9 @@ export async function loadAdminInquiries(): Promise<AdminInquiryLoad> {
       return { inquiries: payload.inquiries, persisted: true };
     }
   } catch (error) {
-    if (!(error instanceof TypeError)) throw error;
+    if (!(error instanceof TypeError) || !mockFallbackEnabled()) throw error instanceof TypeError ? serviceUnavailable() : error;
   }
+  if (!mockFallbackEnabled()) throw serviceUnavailable();
   return { inquiries: loadInquiries(), persisted: false };
 }
 
@@ -170,8 +181,9 @@ export async function saveInquiryStatus(id: string, status: InquiryStatus): Prom
       return { inquiry: payload.inquiry, persisted: true };
     }
   } catch (error) {
-    if (!(error instanceof TypeError)) throw error;
+    if (!(error instanceof TypeError) || !mockFallbackEnabled()) throw error instanceof TypeError ? serviceUnavailable() : error;
   }
+  if (!mockFallbackEnabled()) throw serviceUnavailable();
   const inquiry = updateStatus(id, status).find((item) => item.id === id);
   if (!inquiry) throw new Error('inquiry not found');
   return { inquiry, persisted: false };

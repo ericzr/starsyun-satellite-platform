@@ -2,6 +2,11 @@
 
 The order flow now stops at `pending_payment` until a real payment provider is configured. The server creates a Stripe PaymentIntent and stores its provider/id/client secret on the order. It never changes an order to `paid` from a browser request.
 
+The storefront keeps `VITE_ENABLE_CHECKOUT=false` until the Stripe.js client flow and
+webhook reconciliation have passed production acceptance. While it is false, fixed-price
+products offer inquiry instead of a dead “buy now” path and the cart checkout control is
+disabled. Development builds may still use the local mock checkout.
+
 ## Production setup
 
 1. Apply `supabase/migrations/003_create_orders.sql` and then `supabase/migrations/004_add_payment_intents.sql` to the production project.

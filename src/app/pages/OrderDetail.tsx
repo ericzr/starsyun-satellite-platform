@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Download, Package } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useCart } from '../context/CartContext';
+import { VALUE_ADDED_SERVICES } from '../data/products';
 import { getCustomerOrder, loadDeliveryAssets, type DeliveryAsset, type ServerOrder } from '../lib/orders';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -38,6 +39,10 @@ export function OrderDetail() {
     raw: lang === 'zh' ? '原始数据' : 'Raw Data',
     standard: lang === 'zh' ? '标准处理' : 'Standard',
     analysis: lang === 'zh' ? '分析就绪' : 'Analysis Ready',
+    L1: lang === 'zh' ? 'L1 原始数据' : 'L1 Raw Data',
+    L2: lang === 'zh' ? 'L2 标准产品' : 'L2 Standard Product',
+    L3: lang === 'zh' ? 'L3 正射影像' : 'L3 Orthorectified',
+    L4: lang === 'zh' ? 'L4 增值产品' : 'L4 Value-Added',
   };
 
   const paymentMethodLabels = {
@@ -107,6 +112,11 @@ export function OrderDetail() {
                       <p className="mt-1 text-xs text-muted-foreground">
                         {item.product.productCode} · {processLevelLabels[item.processLevel]}
                       </p>
+                      {(item.services ?? []).length > 0 && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {lang === 'zh' ? '增值服务' : 'Services'}: {(item.services ?? []).map((id) => VALUE_ADDED_SERVICES.find((service) => service.id === id)?.[lang === 'zh' ? 'name' : 'nameEn'] ?? id).join(', ')}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-muted-foreground">
                         {lang === 'zh' ? '数量' : 'Quantity'}: {item.quantity}
                       </p>
@@ -260,6 +270,31 @@ function ServerOrderDetail({ order, lang, navigate }: { order: ServerOrder; lang
               <div className="text-sm text-muted-foreground">{order.quoteNo} · {order.deliveryDays} {lang === 'zh' ? '天交付' : 'day delivery'}</div>
               <div className="font-mono text-2xl text-primary">{order.total.toLocaleString()} {order.currency}</div>
             </div>
+          </section>
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h3 className="tech-label mb-4 text-xs text-muted-foreground">{lang === 'zh' ? '订单明细' : 'Order items'}</h3>
+            {(order.items?.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted-foreground">{lang === 'zh' ? '该订单暂无可展开的商品明细' : 'No line-item details are available for this order.'}</p>
+            ) : (
+              <div className="space-y-2">
+                {order.items.map((item) => {
+                  const snapshot = item.productSnapshot ?? {};
+                  const productName = typeof snapshot.productName === 'string' && snapshot.productName ? snapshot.productName : item.itemType;
+                  const region = typeof snapshot.region === 'string' ? snapshot.region : '';
+                  return (
+                    <div key={item.id} className="flex items-start justify-between gap-3 border-b border-border pb-2 last:border-0 last:pb-0">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm">{productName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {region ? `${region} · ` : ''}{lang === 'zh' ? '数量' : 'Qty'} {item.quantity}
+                        </p>
+                      </div>
+                      <span className="shrink-0 font-mono text-sm">{item.unitPrice.toLocaleString()} {item.currency}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
           <section className="rounded-lg border border-border bg-card p-5 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">{lang === 'zh' ? '支付状态' : 'Payment status'}</span><span>{order.paymentStatus}</span></div>

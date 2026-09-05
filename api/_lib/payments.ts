@@ -95,8 +95,46 @@ export async function createPaymentIntent(order: OrderRecord, provider: PaymentP
   return intent;
 }
 
-export async function updatePaymentFromWebhook(orderId: string, paymentIntentId: string, succeeded: boolean) {
+export async function updatePaymentFromWebhook(orderId: string, paymentIntentId: string, succeeded: boolean, providerEventId?: string, receivedAmount?: number, receivedCurrency?: string) {
   const { url, key } = persistenceConfig();
+  const orderCheck = await fetch(`${url}/rest/v1/orders?select=id,status,payment_status,total,currency&id=eq.${encodeURIComponent(orderId)}&payment_intent_id=eq.${encodeURIComponent(paymentIntentId)}&limit=1`, { headers: { ...supabaseApiHeaders(key), Accept: 'application/json' } });
+  if (!orderCheck.ok) throw new GatewayError(502, `order payment lookup failed (${orderCheck.status})`);
+  const orderRows = (await orderCheck.json().catch(() => [])) as Array<Record<string, unknown>>;
+  if (!orderRows[0]) return false;
+  const eventId = providerEventId && /^[A-Za-z0-9._:-]{8,200}$/.test(providerEventId)
+    ? providerEventId
+    : `stripe:${paymentIntentId}:${succeeded ? 'succeeded' : 'failed'}`;
+  const amountMismatch = succeeded && receivedAmount != null && (Number(orderRows[0].total) * 100 !== receivedAmount || (receivedCurrency && String(orderRows[0].currency).toLowerCase() !== receivedCurrency.toLowerCase()));
+  const eventResponse = await fetch(`${url}/rest/v1/rpc/record_payment_event`, {
+    method: 'POST',
+    headers: { ...supabaseApiHeaders(key), Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      p_order_id: orderId,
+      p_provider: 'stripe',
+      p_provider_event_id: eventId,
+      p_event_type: succeeded ? 'payment_intent.succeeded' : 'payment_intent.payment_failed',
+      p_status: amountMismatch ? 'rejected' : 'verified',
+      p_amount: receivedAmount == null ? null : receivedAmount / 100,
+      p_currency: receivedCurrency?.toUpperCase() ?? null,
+      p_payload: { paymentIntentId, succeeded, amountMismatch: Boolean(amountMismatch) },
+    }),
+  });
+  if (!eventResponse.ok) throw new GatewayError(502, `payment event persistence failed (${eventResponse.status})`);
+  const eventRows = (await eventResponse.json().catch(() => [])) as Array<Record<string, unknown>>;
+  const alreadyProcessed = eventRows[0]?.status === 'processed';
+  if (alreadyProcessed || amountMismatch || eventRows[0]?.status === 'rejected') return false;
+  if (succeeded) {
+    const transitionResponse = await fetch(`${url}/rest/v1/rpc/transition_order`, {
+      method: 'POST',
+      headers: { ...supabaseApiHeaders(key), Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_order_id: orderId, p_to_status: 'paid', p_actor_type: 'system', p_actor_id: 'stripe', p_payload: { paymentIntentId } }),
+    });
+    if (!transitionResponse.ok) throw new GatewayError(502, `order payment transition failed (${transitionResponse.status})`);
+    const transitionedRows = (await transitionResponse.json().catch(() => [])) as Array<Record<string, unknown>>;
+    if (!transitionedRows[0]) throw new GatewayError(404, 'order not found');
+    await markPaymentEventProcessed(url, key, eventId);
+    return true;
+  }
   const stateFilter = succeeded
     ? '&status=eq.pending_payment&payment_status=in.(unpaid,processing,failed)'
     : '&status=eq.pending_payment&payment_status=eq.processing';
@@ -116,5 +154,15 @@ export async function updatePaymentFromWebhook(orderId: string, paymentIntentId:
   });
   if (!response.ok) throw new GatewayError(502, `order payment status persistence failed (${response.status})`);
   const rows = (await response.json().catch(() => [])) as Array<Record<string, unknown>>;
+  if (rows.length > 0) await markPaymentEventProcessed(url, key, eventId);
   return rows.length > 0;
+}
+
+async function markPaymentEventProcessed(url: string, key: string, eventId: string) {
+  const response = await fetch(`${url}/rest/v1/payment_events?provider=eq.stripe&provider_event_id=eq.${encodeURIComponent(eventId)}`, {
+    method: 'PATCH',
+    headers: { ...supabaseApiHeaders(key), Accept: 'application/json', 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ status: 'processed', processed_at: new Date().toISOString() }),
+  });
+  if (!response.ok) throw new GatewayError(502, `payment event acknowledgement failed (${response.status})`);
 }

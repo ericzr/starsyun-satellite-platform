@@ -10,7 +10,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== 'PATCH') return res.status(405).json({ error: 'method not allowed' });
   try {
     checkRateLimit(clientIdentity(req));
-    requireAdmin(req);
+    const admin = requireAdmin(req);
     const rawId = req.query.id;
     const orderId = Array.isArray(rawId) ? rawId[0] : rawId;
     const status = (req.body as { status?: unknown } | undefined)?.status;
@@ -19,7 +19,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (status === 'delivered' && (await listDeliveryAssets(orderId)).length === 0) {
       throw new GatewayError(409, 'register at least one active delivery asset first');
     }
-    return res.status(200).json({ order: await updateOrderDeliveryStatus(orderId, status), persisted: true });
+    const requestHeader = req.headers['x-request-id'];
+    const requestId = Array.isArray(requestHeader) ? requestHeader[0] : requestHeader;
+    return res.status(200).json({ order: await updateOrderDeliveryStatus(orderId, status, admin.email, requestId), persisted: true });
   } catch (error) {
     sendError(res, error);
   }

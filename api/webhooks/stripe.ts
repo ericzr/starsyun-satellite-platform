@@ -45,16 +45,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     verifySignature(payload, Array.isArray(signature) ? signature[0] : signature, secret);
     const event = JSON.parse(payload) as {
       type?: string;
-      data?: { object?: { id?: string; metadata?: { order_id?: string } } };
+      id?: string;
+      data?: { object?: { id?: string; amount_received?: number; amount?: number; currency?: string; metadata?: { order_id?: string } } };
     };
     const object = event.data?.object;
     const orderId = object?.metadata?.order_id;
     const paymentIntentId = object?.id;
     if (!orderId || !paymentIntentId) return res.status(200).json({ received: true, ignored: true });
     if (event.type === 'payment_intent.succeeded') {
-      await updatePaymentFromWebhook(orderId, paymentIntentId, true);
+      await updatePaymentFromWebhook(orderId, paymentIntentId, true, event.id, object.amount_received ?? object.amount, object.currency);
     } else if (event.type === 'payment_intent.payment_failed') {
-      await updatePaymentFromWebhook(orderId, paymentIntentId, false);
+      await updatePaymentFromWebhook(orderId, paymentIntentId, false, event.id, object.amount_received ?? object.amount, object.currency);
     }
     return res.status(200).json({ received: true });
   } catch (error) {

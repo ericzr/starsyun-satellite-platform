@@ -1,21 +1,29 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Package, Eye } from 'lucide-react';
+import { ExternalLink, Eye, Package } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useCart } from '../context/CartContext';
 import { loadCustomerOrders, type ServerOrder } from '../lib/orders';
+import { loadPublicDownloads, type PublicDownload } from '../lib/downloads';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { fmtCny, fmtCnyEn } from '../lib/pricing';
 
 export function Orders() {
-  const { t, lang } = useI18n();
+  const { lang } = useI18n();
   const navigate = useNavigate();
   const { orders } = useCart();
   const [serverOrders, setServerOrders] = useState<ServerOrder[]>([]);
+  const [downloads, setDownloads] = useState<PublicDownload[]>([]);
+  const demoDataEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
+  const localOrders = demoDataEnabled ? orders : [];
 
   useEffect(() => {
     loadCustomerOrders().then(setServerOrders).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    loadPublicDownloads().then(setDownloads).catch(() => undefined);
   }, []);
 
   const money = (v: number) => (lang === 'zh' ? fmtCny(v) : fmtCnyEn(v));
@@ -29,7 +37,7 @@ export function Orders() {
     cancelled: { zh: '已取消', en: 'Cancelled', variant: 'destructive' as const },
   };
 
-  if (orders.length === 0 && serverOrders.length === 0) {
+  if (localOrders.length === 0 && serverOrders.length === 0 && downloads.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
         <Package className="size-16 opacity-50" />
@@ -44,7 +52,7 @@ export function Orders() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-[1200px] px-6 py-8">
-        <h1 className="text-2xl">{lang === 'zh' ? '我的订单' : 'My Orders'}</h1>
+        <h1 className="text-2xl">{lang === 'zh' ? '我的订单与下载记录' : 'Orders & Downloads'}</h1>
 
         <div className="mt-6 space-y-4">
           {serverOrders.map((order) => {
@@ -64,6 +72,9 @@ export function Orders() {
                       <Badge variant={status.variant}>{lang === 'zh' ? status.zh : status.en}</Badge>
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">{lang === 'zh' ? '报价单' : 'Quote'}: {order.quoteNo} · {new Date(order.createdAt).toLocaleString(lang)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {lang === 'zh' ? '明细' : 'Items'}: {order.items?.length ?? 0}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="font-mono text-lg text-primary">{order.total.toLocaleString()} {order.currency}</p>
@@ -76,7 +87,7 @@ export function Orders() {
               </div>
             );
           })}
-          {orders.map((order) => (
+          {localOrders.map((order) => (
             <div key={order.id} className="rounded-lg border border-border bg-card p-5">
               <div className="flex items-start justify-between">
                 <div>
@@ -108,6 +119,39 @@ export function Orders() {
               </div>
             </div>
           ))}
+          {downloads.length > 0 && (
+            <section className="pt-2">
+              <h2 className="tech-label mb-3 text-xs text-muted-foreground">{lang === 'zh' ? '公开数据下载记录' : 'Public data downloads'}</h2>
+              <div className="space-y-3">
+                {downloads.map((download) => (
+                  <div key={download.id} className="rounded-lg border border-border bg-card p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate font-medium">{download.productName}</span>
+                          <Badge variant="secondary">{lang === 'zh' ? '公开数据' : 'Open data'}</Badge>
+                        </div>
+                        <p className="mt-2 font-mono text-xs text-muted-foreground">{download.productCode}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {download.provider || (lang === 'zh' ? '公开数据源' : 'Public source')} · {new Date(download.requestedAt).toLocaleString(lang)}
+                        </p>
+                        {download.fileFormat && <p className="mt-1 text-xs text-muted-foreground">{download.fileFormat}</p>}
+                      </div>
+                      <a
+                        href={download.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <ExternalLink className="size-4" />
+                        {lang === 'zh' ? '打开数据源' : 'Open source'}
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </div>

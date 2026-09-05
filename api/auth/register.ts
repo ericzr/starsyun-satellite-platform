@@ -1,11 +1,13 @@
 import { setCustomerCookies, signUpCustomer } from '../_lib/customer-auth';
-import { sendError, setCors, type ApiRequest, type ApiResponse } from '../_lib/http';
+import { checkRateLimit } from '../_lib/stac';
+import { clientIdentity, sendError, setCors, type ApiRequest, type ApiResponse } from '../_lib/http';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
   try {
+    checkRateLimit(clientIdentity(req));
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.email !== 'string' || typeof body.password !== 'string' || typeof body.name !== 'string') {
       return res.status(400).json({ error: 'name, email and password are required' });

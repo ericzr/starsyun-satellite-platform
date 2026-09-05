@@ -47,6 +47,7 @@ try {
   await waitForServer();
   const healthResponse = await expectStatus('/healthz', 200);
   if (!healthResponse.headers.get('x-request-id')) throw new Error('health response is missing x-request-id');
+  if (!healthResponse.headers.get('content-security-policy-report-only')) throw new Error('security policy header is missing');
   const health = await healthResponse.json();
   if (health.status !== 'ok') throw new Error('health payload is invalid');
   const ready = await (await expectStatus('/readyz', 200)).json();
@@ -55,9 +56,31 @@ try {
   }
   const spa = await expectStatus('/explore', 200);
   if (!(await spa.text()).includes('<div id="root"></div>')) throw new Error('SPA fallback did not return the frontend shell');
-  await expectStatus('/api/does-not-exist', 404);
   const sampleOrderId = '00000000-0000-4000-8000-000000000001';
+  await expectStatus('/api/does-not-exist', 404);
+  await expectStatus('/api/admin/areas?level=0', 502);
+  await expectStatus('/api/catalog/sources', 502);
+  await expectStatus('/api/catalog/products', 502);
+  await expectStatus('/api/analysis/jobs', 401);
+  await expectStatus('/api/downloads', 401);
+  await expectStatus('/api/downloads', 401, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ productId: 'earth-search-example', productCode: 'EXAMPLE', productName: 'Example', sourceUrl: 'https://example.com' }),
+  });
+  await expectStatus('/api/wallet', 401);
+  await expectStatus('/api/wallet/holds', 401, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ direction: 'hold', amount: 1, currency: 'CNY', referenceType: 'order', referenceId: sampleOrderId, idempotencyKey: 'smoke-wallet-hold-1' }),
+  });
+  await expectStatus('/api/admin/provider-quotes', 401);
+  await expectStatus('/api/admin/provider-orders', 401);
+  await expectStatus('/api/admin/analysis-jobs', 401);
+  await expectStatus('/api/admin/catalog-products', 401);
+  await expectStatus('/api/admin/wallet-operation', 401, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
   await expectStatus('/api/orders', 401);
+  await expectStatus(`/api/orders/${sampleOrderId}/cancel`, 401, { method: 'POST' });
   await expectStatus(`/api/orders/${sampleOrderId}/delivery-assets`, 401, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

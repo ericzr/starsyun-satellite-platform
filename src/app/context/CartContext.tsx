@@ -1,10 +1,16 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
-import type { Product } from '../data/products';
+import type { Product, ProcessingLevel, ValueAddedService } from '../data/products';
 import type { ProcessLevel } from '../lib/pricing';
+
+/** Local cart lines can come from the legacy processing controls or the
+ * product-detail L1-L4 selector. Keeping both values preserves compatibility
+ * while preventing different detail-page levels from being merged. */
+export type CartProcessLevel = ProcessLevel | ProcessingLevel;
 
 export interface CartItem {
   product: Product;
-  processLevel: ProcessLevel;
+  processLevel: CartProcessLevel;
+  services?: ValueAddedService[];
   quantity: number;
   price: number; // 总价
 }
@@ -24,9 +30,9 @@ export interface Order {
 interface CartContextValue {
   items: CartItem[];
   orders: Order[];
-  addToCart: (product: Product, processLevel: ProcessLevel, price: number) => void;
-  removeFromCart: (productId: string) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
+  addToCart: (product: Product, processLevel: CartProcessLevel, price: number, services?: ValueAddedService[]) => void;
+  removeFromCart: (productId: string, processLevel?: CartProcessLevel, services?: ValueAddedService[]) => void;
+  updateQuantity: (productId: string, quantity: number, processLevel?: CartProcessLevel, services?: ValueAddedService[]) => void;
   clearCart: () => void;
   createOrder: (paymentMethod: 'alipay' | 'wechat' | 'bank') => Order;
   getOrder: (orderId: string) => Order | undefined;
@@ -39,32 +45,37 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
 
-  const addToCart = (product: Product, processLevel: ProcessLevel, price: number) => {
+  const addToCart = (product: Product, processLevel: CartProcessLevel, price: number, services: ValueAddedService[] = []) => {
+    const normalizedServices = [...new Set(services)].sort();
     setItems((prev) => {
-      const existing = prev.find((item) => item.product.id === product.id && item.processLevel === processLevel);
+      const existing = prev.find((item) => item.product.id === product.id
+        && item.processLevel === processLevel
+        && sameServices(item.services, normalizedServices));
       if (existing) {
         return prev.map((item) =>
-          item.product.id === product.id && item.processLevel === processLevel
-            ? { ...item, quantity: item.quantity + 1, price: price * (item.quantity + 1) }
+          item.product.id === product.id
+            && item.processLevel === processLevel
+            && sameServices(item.services, normalizedServices)
+            ? { ...item, services: normalizedServices, quantity: item.quantity + 1, price: price * (item.quantity + 1) }
             : item
         );
       }
-      return [...prev, { product, processLevel, quantity: 1, price }];
+      return [...prev, { product, processLevel, services: normalizedServices, quantity: 1, price }];
     });
   };
 
-  const removeFromCart = (productId: string) => {
-    setItems((prev) => prev.filter((item) => item.product.id !== productId));
+  const removeFromCart = (productId: string, processLevel?: CartProcessLevel, services?: ValueAddedService[]) => {
+    setItems((prev) => prev.filter((item) => !matchesLine(item, productId, processLevel, services)));
   };
 
-  const updateQuantity = (productId: string, quantity: number) => {
+  const updateQuantity = (productId: string, quantity: number, processLevel?: CartProcessLevel, services?: ValueAddedService[]) => {
     if (quantity <= 0) {
-      removeFromCart(productId);
+      removeFromCart(productId, processLevel, services);
       return;
     }
     setItems((prev) =>
       prev.map((item) =>
-        item.product.id === productId
+        matchesLine(item, productId, processLevel, services)
           ? { ...item, quantity, price: (item.price / item.quantity) * quantity }
           : item
       )
@@ -112,6 +123,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
       {children}
     </CartContext.Provider>
   );
+}
+
+function sameServices(left: ValueAddedService[] | undefined, right: ValueAddedService[]) {
+  const a = [...(left ?? [])].sort();
+  return a.length === right.length && a.every((service, index) => service === right[index]);
+}
+
+function matchesLine(item: CartItem, productId: string, processLevel?: CartProcessLevel, services?: ValueAddedService[]) {
+  return item.product.id === productId
+    && (!processLevel || item.processLevel === processLevel)
+    && (services === undefined || sameServices(item.services, services));
 }
 
 export function useCart() {

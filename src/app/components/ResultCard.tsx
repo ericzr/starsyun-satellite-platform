@@ -1,12 +1,12 @@
-import { CloudSun, Ruler, CalendarDays, Layers, GitCompare, ShoppingCart, Clock, Archive, Satellite, BarChart3, ExternalLink } from 'lucide-react';
+import { CloudSun, Ruler, CalendarDays, Layers, GitCompare, ShoppingCart, Clock, Archive, Satellite, BarChart3 } from 'lucide-react';
 import type { Product } from '../data/products';
 import { useI18n } from '../i18n';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { cn } from './ui/utils';
-import { DATA_TYPE_LABEL, PRICE_TYPE_LABEL, pick } from '../lib/labels';
-import { fmtCny } from '../lib/pricing';
+import { DATA_TYPE_LABEL, pick } from '../lib/labels';
+import { PublicDownloadDialog } from './PublicDownloadDialog';
 
 interface ResultCardProps {
   product: Product;
@@ -35,12 +35,17 @@ export function ResultCard({
   const priceLabel =
     product.priceType === 'free'
       ? t.common.free
-      : product.priceType === 'inquiry'
+      : product.priceType === 'inquiry' || product.unitPrice <= 0
         ? t.common.needInquiry
-        : `${product.unitPrice} ${lang === 'zh' ? t.common.perSqkm : 'CNY/km²'}`;
+        : product.priceType === 'estimated'
+          ? `${lang === 'zh' ? '约 ' : 'Est. '}${product.unitPrice} ${lang === 'zh' ? t.common.perSqkm : 'CNY/km²'}`
+          : `${product.unitPrice} ${lang === 'zh' ? t.common.perSqkm : 'CNY/km²'}`;
 
   const isInstantPurchase = product.purchaseType === 'instant';
-  const isOpenData = Boolean(product.sourceUrl);
+  const checkoutEnabled = import.meta.env.DEV
+    || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true'
+    || import.meta.env.VITE_ENABLE_CHECKOUT === 'true';
+  const isOpenData = product.priceType === 'free' && Boolean(product.sourceUrl);
 
   // 产品类型图标和标签
   const categoryConfig = {
@@ -146,7 +151,7 @@ export function ResultCard({
           <div
             className={cn(
               'truncate font-mono text-sm',
-              product.priceType === 'inquiry' ? 'text-warning' : 'text-foreground',
+              product.priceType === 'inquiry' || product.priceType === 'estimated' || product.unitPrice <= 0 ? 'text-warning' : 'text-foreground',
             )}
           >
             {priceLabel}
@@ -174,13 +179,21 @@ export function ResultCard({
             {t.common.viewDetail}
           </Button>
           {isOpenData ? (
-            <Button asChild size="sm" className="h-8 gap-1 text-xs">
-              <a href={product.sourceUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="size-3.5" />
-                {lang === 'zh' ? '打开数据' : 'Open data'}
-              </a>
+            <PublicDownloadDialog
+              productId={product.id}
+              sourceUrl={product.sourceUrl!}
+              productCode={product.productCode}
+              productName={lang === 'zh' ? product.productName : product.productNameEn}
+              provider={product.provider}
+              fileFormat={product.fileFormat}
+              size="sm"
+              className="h-8 gap-1 text-xs"
+            />
+          ) : product.priceType === 'free' ? (
+            <Button size="sm" variant="outline" className="h-8 text-xs" disabled>
+              {lang === 'zh' ? '暂无下载源' : 'Source unavailable'}
             </Button>
-          ) : isInstantPurchase ? (
+          ) : isInstantPurchase && checkoutEnabled ? (
             <Button size="sm" className="h-8 gap-1 text-xs" onClick={onBuy}>
               <ShoppingCart className="size-3.5" />
               {lang === 'zh' ? '立即购买' : 'Buy Now'}

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List, Upload, MapPinned, ChevronDown, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useI18n } from '../i18n';
-import { ADMINISTRATIVE_AREAS, PRODUCTS, REGIONS, type Product } from '../data/products';
+import { PRODUCTS, REGIONS, type Product } from '../data/products';
 import { coverageRatio, intersects, bboxAreaKm2, geometryAreaKm2, fmtArea, parseCoords, parseVectorFile, type BBox } from '../lib/geo';
 import { MapCanvas, type Footprint } from '../components/MapCanvas';
 import { FilterPanel, DEFAULT_FILTERS, type Filters } from '../components/FilterPanel';
@@ -11,38 +11,13 @@ import { ResultCard } from '../components/ResultCard';
 import { CompareDrawer } from '../components/CompareDrawer';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '../components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle } from '../components/ui/sheet';
 import { useInquiryDraft } from '../context/InquiryContext';
 import { useCart } from '../context/CartContext';
 import { searchEarthSearch } from '../services/stac';
-import { fetchGlobalCities, fetchGlobalCountries, fetchGlobalDistricts, geocodeAdministrativeArea, geocodeGlobalCity, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
+import { fetchCatalogProducts } from '../services/catalog';
+import { fetchGlobalCities, fetchGlobalCountries, fetchGlobalDistricts, fetchGlobalStates, getGlobalAdminArea, searchGlobalAdminAreas, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
 import { toast } from 'sonner';
-
-const LOCAL_COUNTRY_ISO: Record<string, string> = {
-  china: 'CN', uae: 'AE', 'saudi-arabia': 'SA', singapore: 'SG', indonesia: 'ID', kenya: 'KE', brazil: 'BR',
-};
-
-const LOCAL_STATE_LABELS: Record<string, Record<string, string>> = {
-  CN: {
-    Anhui: '安徽省', Beijing: '北京市', Chongqing: '重庆市', Fujian: '福建省', Gansu: '甘肃省',
-    Guangdong: '广东省', 'Guangxi Zhuang Autonomous Region': '广西壮族自治区', Guizhou: '贵州省', Hainan: '海南省',
-    Hebei: '河北省', Heilongjiang: '黑龙江省', Henan: '河南省', 'Hong Kong': '香港特别行政区', Hubei: '湖北省',
-    Hunan: '湖南省', 'Inner Mongolia': '内蒙古自治区', Jiangsu: '江苏省', Jiangxi: '江西省', Jilin: '吉林省',
-    Liaoning: '辽宁省', Macau: '澳门特别行政区', Keelung: '基隆市', Kinmen: '金门县', Penghu: '澎湖县', 'Ningxia Hui Autonomous Region': '宁夏回族自治区', Qinghai: '青海省',
-    Shaanxi: '陕西省', Shandong: '山东省', Shanxi: '山西省', Sichuan: '四川省',
-    'Taiwan Province, People\'s Republic of China': '台湾省', Taiwan: '台湾省', 'Tibet Autonomous Region': '西藏自治区',
-    Xinjiang: '新疆维吾尔自治区', Yunnan: '云南省', Zhejiang: '浙江省',
-  },
-};
-
-const LOCAL_CITY_LABELS: Record<string, string> = {
-  Baotou: '包头市', 'Bayan Nur': '巴彦淖尔市', 'Bayannur Shi': '巴彦淖尔市', Beichengqu: '北城区', Chifeng: '赤峰市',
-  Dongsheng: '东胜区', Erenhot: '二连浩特市', 'E’erguna': '额尔古纳市', Genhe: '根河市', Hailar: '海拉尔区', Hohhot: '呼和浩特市',
-  Hulunbuir: '呼伦贝尔市', 'Hulunbuir Region': '呼伦贝尔市', Manzhouli: '满洲里市', Ordos: '鄂尔多斯市', 'Ordos Shi': '鄂尔多斯市',
-  Tongliao: '通辽市', Ulanhot: '乌兰浩特市', Wuhai: '乌海市', 'Xilin Gol Meng': '锡林郭勒盟', 'Xilin Hot': '锡林浩特市', Yakeshi: '牙克石市', Zhalantun: '扎兰屯市',
-  'Jalai Nur': '扎赉诺尔区', Jiagedaqi: '加格达奇区', Jining: '集宁区', Mositai: '莫斯泰', Mujiayingzi: '木家营子',
-  'Oroqen Zizhiqi': '鄂伦春自治旗', Pingzhuang: '平庄', Salaqi: '萨拉齐', Shiguai: '石拐区', Wenquan: '温泉', Wuda: '乌达区',
-};
 
 function countryLabel(country: GlobalCountry, lang: string) {
   if (lang !== 'zh') return country.name;
@@ -53,53 +28,85 @@ function countryLabel(country: GlobalCountry, lang: string) {
   }
 }
 
-function stateLabel(state: GlobalState, countryIso: string, lang: string) {
-  if (lang !== 'zh') return state.name;
-  const translated = LOCAL_STATE_LABELS[countryIso]?.[state.name];
-  if (translated) return translated;
-  const localCountry = ADMINISTRATIVE_AREAS.find((country) => (LOCAL_COUNTRY_ISO[country.id] ?? country.id) === countryIso);
-  const localState = localCountry?.subdivisions.find((area) =>
-    area.nameEn.toLowerCase() === state.name.toLowerCase() ||
-    area.name.toLowerCase() === state.name.toLowerCase() ||
-    state.name.toLowerCase().includes(area.nameEn.toLowerCase()),
-  );
-  return localState?.name ?? state.name;
+function stateLabel(state: GlobalState) {
+  return state.name;
 }
 
-function cityLabel(city: GlobalCity, localCountry: (typeof ADMINISTRATIVE_AREAS)[number] | undefined, level1: string, lang: string) {
-  if (lang !== 'zh') return city.name;
-  if (LOCAL_CITY_LABELS[city.name]) return LOCAL_CITY_LABELS[city.name];
-  const localState = localCountry?.subdivisions.find((area) =>
-    area.id === level1 || area.name === level1 || area.nameEn === level1,
-  );
-  const localCity = localState?.localities.find((area) =>
-    area.name.toLowerCase() === city.name.toLowerCase() || area.nameEn.toLowerCase() === city.name.toLowerCase(),
-  );
-  return localCity?.name ?? city.name;
-}
-
-function isSecondLevelLocality(name: string) {
-  return !/(区|县|旗|镇|乡|街道)$/.test(name.trim());
+function cityLabel(city: GlobalCity) {
+  return city.name;
 }
 
 function matchRegion(q: string) {
   const s = q.trim().toLowerCase();
-  if (!s) return null;
-  return (
-    REGIONS.find((r) => r.aliases.some((a) => a.toLowerCase().includes(s) || s.includes(a.toLowerCase()))) ??
-    null
-  );
+  if (s.length < 2) return null;
+  const compact = (value: string) => value.toLowerCase().replace(/[\s,，.·'’\-_/]+/g, '');
+  const compactQuery = compact(s);
+  const candidates = REGIONS.flatMap((region) => [
+    ...region.aliases.map((alias) => ({ region, value: alias.toLowerCase() })),
+    { region, value: region.name.toLowerCase() },
+    { region, value: region.nameEn.toLowerCase() },
+  ]);
+  return candidates
+    .map(({ region, value }) => ({
+      region,
+      score: value === s
+        ? 0
+        : value.startsWith(s)
+          ? 1
+          : value.includes(s)
+            ? 2
+            : compactQuery.includes(compact(value))
+              ? 3
+              : compact(value).includes(compactQuery)
+                ? 4
+                : 99,
+    }))
+    .filter((candidate) => candidate.score < 99)
+    .sort((a, b) => a.score - b.score || a.region.name.length - b.region.name.length)[0]?.region ?? null;
 }
 
 const TIME_DAYS: Record<string, number> = { '1': 1, '7': 7, '30': 30, '90': 90, '365': 365, all: Infinity };
 
+type CategoryQuery = 'archive' | 'latest' | 'tasking' | 'sar' | 'dem' | 'analysis';
+
+function filtersForCategory(value: string | null): Filters {
+  const base = { ...DEFAULT_FILTERS };
+  switch (value as CategoryQuery | null) {
+    case 'archive':
+      return { ...base, categories: ['archive'] };
+    case 'latest':
+      return { ...base, categories: ['archive'], timeMode: 'preset', timePreset: '30' };
+    case 'tasking':
+      return { ...base, categories: ['tasking'] };
+    case 'sar':
+      return { ...base, dataTypes: ['sar'] };
+    case 'dem':
+      return { ...base, dataTypes: ['dem'] };
+    case 'analysis':
+      return { ...base, categories: ['analysis'] };
+    default:
+      return base;
+  }
+}
+
 function regionSearchBbox(region: (typeof REGIONS)[number]): BBox {
   const [lng, lat] = region.center;
-  return [lng - 0.35, lat - 0.25, lng + 0.35, lat + 0.25];
+  return boundedBbox(lng - 0.35, lat - 0.25, lng + 0.35, lat + 0.25);
 }
 
 function pointSearchBbox([lng, lat]: [number, number]): BBox {
-  return [lng - 0.25, lat - 0.2, lng + 0.25, lat + 0.2];
+  return boundedBbox(lng - 0.25, lat - 0.2, lng + 0.25, lat + 0.2);
+}
+
+function boundedBbox(west: number, south: number, east: number, north: number): BBox {
+  // Keep a longitude just outside [-180, 180] when the search window crosses
+  // the date line. `splitBBox` converts it into legal provider requests while
+  // preserving the narrow area and both sides of the globe.
+  const w = Math.max(-540, Math.min(540, Math.min(west, east)));
+  const e = Math.max(-540, Math.min(540, Math.max(west, east)));
+  const s = Math.max(-90, Math.min(90, south));
+  const n = Math.max(-90, Math.min(90, north));
+  return [w, s, Math.max(w + 0.0001, e), Math.max(s + 0.0001, n)];
 }
 
 function datetimeForFilters(filters: Filters): string | undefined {
@@ -107,7 +114,10 @@ function datetimeForFilters(filters: Filters): string | undefined {
     return `${filters.dateStart}T00:00:00Z/${filters.dateStart}T23:59:59Z`;
   }
   if (filters.timeMode === 'range' && filters.dateStart && filters.dateEnd) {
-    return `${filters.dateStart}T00:00:00Z/${filters.dateEnd}T23:59:59Z`;
+    const [start, end] = filters.dateStart <= filters.dateEnd
+      ? [filters.dateStart, filters.dateEnd]
+      : [filters.dateEnd, filters.dateStart];
+    return `${start}T00:00:00Z/${end}T23:59:59Z`;
   }
   if (filters.timeMode === 'preset' && filters.timePreset !== 'all') {
     const start = new Date(Date.now() - TIME_DAYS[filters.timePreset] * 86400000).toISOString();
@@ -122,6 +132,9 @@ export function Explore() {
   const { setDraft } = useInquiryDraft();
   const { addToCart } = useCart();
   const [params] = useSearchParams();
+  const queryParam = params.get('q');
+  const categoryParam = params.get('category');
+  const adminLang = lang === 'zh' ? 'zh' : 'en';
 
   const [search, setSearch] = useState('');
   const [selectionMode, setSelectionMode] = useState<'admin' | 'vector'>('admin');
@@ -135,7 +148,9 @@ export function Explore() {
   const [globalCities, setGlobalCities] = useState<GlobalCity[]>([]);
   const [globalDistricts, setGlobalDistricts] = useState<GlobalCity[]>([]);
   const [adminLoading, setAdminLoading] = useState(false);
+  const stateRequestRef = useRef(0);
   const cityRequestRef = useRef(0);
+  const districtRequestRef = useRef(0);
   const adminGeoRequestRef = useRef(0);
   const [vectorName, setVectorName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,131 +170,195 @@ export function Explore() {
   const [remoteProducts, setRemoteProducts] = useState<Product[] | null>(null);
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [remoteError, setRemoteError] = useState(false);
+  const searchRequestRef = useRef(0);
+  const [catalogProducts, setCatalogProducts] = useState<Product[] | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState(false);
+  const demoDataEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
 
   useEffect(() => {
     let cancelled = false;
-    fetchGlobalCountries()
+    setCatalogLoading(true);
+    fetchCatalogProducts({ limit: 100 })
+      .then((products) => {
+        if (!cancelled) {
+          setCatalogProducts(products);
+          setCatalogError(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCatalogProducts([]);
+          setCatalogError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchGlobalCountries(adminLang)
       .then((countries) => {
         if (!cancelled) setGlobalCountries(countries);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) setGlobalCountries([]);
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [adminLang]);
+
+  // Home category cards carry a filter intent in the URL so deep links and
+  // refreshes open the same product view instead of an unfiltered explorer.
+  useEffect(() => {
+    setFilters(filtersForCategory(categoryParam));
+  }, [categoryParam]);
 
   // Handle ?q= from home
   useEffect(() => {
-    const q = params.get('q');
-    if (q) {
-      setSearch(q);
-      runSearch(q);
+    if (queryParam) {
+      setSearch(queryParam);
+      // URL changes are the source of truth for shareable searches. The
+      // handler below navigates first and returns, so this effect performs
+      // the actual search exactly once for the new query.
+      void runSearch(queryParam, false);
+    } else if (searchRequestRef.current > 0) {
+      // Navigating back to the plain explorer URL must not leave the previous
+      // coordinate/place result and map focus mounted in the same component.
+      searchRequestRef.current += 1;
+      adminGeoRequestRef.current += 1;
+      setSearch('');
+      setAoi(null);
+      setBoundary(null);
+      setVectorName('');
+      setRegionId(null);
+      setRemoteBbox(null);
+      setRemoteProducts(null);
+      setRemoteError(false);
+      setAdminCountry('');
+      setAdminLevel1('');
+      setAdminLevel2('');
+      setAdminLevel3('');
+      setGlobalStates([]);
+      setGlobalCities([]);
+      setGlobalDistricts([]);
+      focusKey.current += 1;
+      setFocus(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [queryParam]);
 
-  function runSearch(q: string) {
+  async function runSearch(q: string, syncUrl = true) {
     const query = q.trim();
     if (!query) return;
+    // Keep the search addressable and shareable. This also makes a search
+    // entered directly in the explorer behave the same as a home-page search.
+    if (syncUrl && queryParam !== query) {
+      setSearch(query);
+      navigate(`/explore?q=${encodeURIComponent(query)}`, { replace: true });
+      return;
+    }
+    const requestId = ++searchRequestRef.current;
+    adminGeoRequestRef.current += 1;
     setDrawing(false);
     setSearch(query);
     setAoi(null);
     setBoundary(null);
     setVectorName('');
+    setRegionId(null);
+    setRemoteBbox(null);
+    setRemoteProducts(null);
+    setRemoteError(false);
+    setAdminCountry('');
+    setAdminLevel1('');
+    setAdminLevel2('');
+    setAdminLevel3('');
+    setGlobalStates([]);
+    setGlobalCities([]);
+    setGlobalDistricts([]);
     const coords = parseCoords(query);
     if (coords) {
       focusKey.current += 1;
       setFocus({ center: coords, zoom: 12, key: focusKey.current });
-      setRegionId(null);
-      setAdminCountry('');
-      setAdminLevel1('');
-      setAdminLevel2('');
-      setAdminLevel3('');
-      setGlobalDistricts([]);
       setRemoteBbox(pointSearchBbox(coords));
       return;
     }
     const region = matchRegion(query);
     if (region) {
       selectRegion(region);
-    } else {
-      toast.error(lang === 'zh' ? '未找到该地点，试试迪拜 / 上海 / 深圳' : 'Place not found. Try Dubai / Shanghai.');
+      return;
+    }
+
+    // Resolve arbitrary global place names against the versioned ADM0-ADM3
+    // directory. The request is server-side, cached and rate-limited.
+    try {
+      const matches = await searchGlobalAdminAreas(query, adminLang);
+      if (requestId !== searchRequestRef.current) return;
+      const match = matches[0];
+      if (match) {
+        if (match.level === 0) {
+          selectGlobalCountry(match.id);
+          setAreaSelectorOpen(true);
+        } else {
+          await focusAdminArea(match.id, match.level ?? 1);
+        }
+        return;
+      }
+    } catch {
+      // Keep the user-facing error concise; the server logs the upstream cause.
+    }
+    if (requestId === searchRequestRef.current) {
+      toast.error(lang === 'zh' ? '未找到该地点，请输入城市、行政区或经纬度' : 'Place not found. Enter a city, administrative area, or coordinates.');
     }
   }
 
-  function syncAdminSelection(regionId: string) {
-    for (const country of ADMINISTRATIVE_AREAS) {
-      for (const subdivision of country.subdivisions) {
-        const locality = subdivision.localities.find((item) => item.regionId === regionId);
-        if (locality) {
-          const countryIso = LOCAL_COUNTRY_ISO[country.id] ?? country.id;
-          const globalCountry = globalCountries.find((item) => item.iso2 === countryIso);
-          const globalSubdivision = globalCountry?.states.find((item) =>
-            item.name.toLowerCase() === subdivision.nameEn.toLowerCase() ||
-            item.name.toLowerCase().includes(subdivision.nameEn.toLowerCase()),
-          );
-          if (globalCountry) setGlobalStates(globalCountry.states);
-          setAdminCountry(countryIso);
-          setAdminLevel1(globalSubdivision?.name ?? subdivision.id);
-          setAdminLevel2(locality.id);
-          setAdminLevel3('');
-          return;
-        }
-      }
+  async function focusAdminArea(id: string, level: 0 | 1 | 2 | 3) {
+    const requestId = ++adminGeoRequestRef.current;
+    const area = await getGlobalAdminArea(id, adminLang).catch(() => null);
+    if (requestId !== adminGeoRequestRef.current || !area) return;
+    if (!Number.isFinite(area.lat) || !Number.isFinite(area.lon)) {
+      toast.error(lang === 'zh' ? '该行政区缺少可用边界数据' : 'This administrative area has no usable boundary data.');
+      return;
     }
-    setAdminCountry('');
+    const bbox = area.bbox ?? pointSearchBbox([area.lon, area.lat]);
+    focusKey.current += 1;
+    setRegionId(null);
+    setSearch(area.name);
+    setBoundary(area.boundary ?? null);
+    setAoi(bbox);
+    setFocus({ center: [area.lon, area.lat], zoom: area.boundary ? [3, 5, 7, 9][level] : 10, key: focusKey.current });
+    setRemoteBbox(bbox);
+  }
+
+  function selectGlobalCountry(countryId: string) {
+    setAdminCountry(countryId);
     setAdminLevel1('');
     setAdminLevel2('');
+    setAdminLevel3('');
+    setGlobalStates([]);
+    setGlobalCities([]);
+    setGlobalDistricts([]);
+    void focusAdminArea(countryId, 0);
   }
 
-  async function selectGlobalCity(city: GlobalCity, level: 'city' | 'district' = 'city') {
-    adminGeoRequestRef.current += 1;
-    focusKey.current += 1;
-    setBoundary(null);
-    const region = REGIONS.find((item) => item.aliases.some((alias) => alias.toLowerCase() === city.name.toLowerCase()));
-    setRegionId(region?.id ?? null);
-    const country = globalCountries.find((item) => item.iso2 === adminCountry);
-    const localCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === adminCountry);
-    const selectedState = adminLevel1;
+  function selectGlobalCity(city: GlobalCity, level: 'city' | 'district' = 'city') {
     if (level === 'city') {
       setAdminLevel2(city.id);
       setAdminLevel3('');
+      setGlobalDistricts([]);
+      void focusAdminArea(city.id, 2);
     } else {
       setAdminLevel3(city.id);
-    }
-    const displayName = cityLabel(city, localCountry, selectedState, lang);
-    setSearch(displayName);
-    // Keep known business regions responsive while the exact administrative
-    // boundary is fetched in the background.
-    if (region) {
-      setAoi(regionSearchBbox(region));
-      setFocus({ center: region.center, zoom: region.zoom, key: focusKey.current });
-      setRemoteBbox(regionSearchBbox(region));
-    }
-    const resolved = country
-      ? await geocodeGlobalCity(country.name, selectedState, city.name, lang === 'zh' ? 'zh' : 'en').catch(() => null)
-      : null;
-    const located = resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)
-      ? resolved
-      : city.lat && city.lon ? city : null;
-    if (!located || !Number.isFinite(located.lat) || !Number.isFinite(located.lon)) {
-      if (region) {
-        return;
-      }
-      toast.error(lang === 'zh' ? '该城市暂时无法定位，请输入坐标或直接在地图绘制区域' : 'This city could not be located. Enter coordinates or draw an area.');
-      return;
-    }
-    setBoundary(located.boundary ?? null);
-    setAoi(located.bbox ?? pointSearchBbox([located.lon, located.lat]));
-    setFocus({ center: [located.lon, located.lat], zoom: located.boundary ? 10 : 11, key: focusKey.current });
-    setRemoteBbox(located.bbox ?? pointSearchBbox([located.lon, located.lat]));
-    if (country && level === 'city') {
-      fetchGlobalDistricts(country.name, selectedState, city.name, lang === 'zh' ? 'zh' : 'en')
-        .then(setGlobalDistricts).catch(() => setGlobalDistricts([]));
+      void focusAdminArea(city.id, 3);
     }
   }
 
   function clearAdminCountry() {
+    adminGeoRequestRef.current += 1;
     setAdminCountry('');
     setAdminLevel1('');
     setAdminLevel2('');
@@ -299,51 +378,34 @@ export function Explore() {
     setAdminLevel3('');
     setGlobalCities([]);
     setGlobalDistricts([]);
-    setRegionId(null);
-    setBoundary(null);
-    setAoi(null);
-    setRemoteBbox(null);
+    if (adminCountry) void focusAdminArea(adminCountry, 0);
   }
 
   function clearAdminLevel2() {
     setAdminLevel2('');
     setAdminLevel3('');
     setGlobalDistricts([]);
-    void selectGlobalState(adminLevel1);
+    if (adminLevel1) void focusAdminArea(adminLevel1, 1);
   }
 
   function clearAdminLevel3() {
     setAdminLevel3('');
     const city = globalCities.find((item) => item.id === adminLevel2);
-    if (city) void selectGlobalCity(city);
+    if (city) void focusAdminArea(city.id, 2);
   }
 
-  async function selectGlobalState(state: string) {
-    const requestId = ++adminGeoRequestRef.current;
-    setAdminLevel1(state);
+  function selectGlobalState(stateId: string) {
+    setAdminLevel1(stateId);
     setAdminLevel2('');
     setAdminLevel3('');
     setGlobalDistricts([]);
     setGlobalCities([]);
-    setBoundary(null);
-    const country = globalCountries.find((item) => item.iso2 === adminCountry);
-    const localCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === adminCountry);
-    const countryName = country?.name ?? localCountry?.nameEn;
-    if (!countryName) return;
-    const resolved = await geocodeAdministrativeArea(countryName, state, lang === 'zh' ? 'zh' : 'en').catch(() => null);
-    if (requestId !== adminGeoRequestRef.current || !resolved || !Number.isFinite(resolved.lat) || !Number.isFinite(resolved.lon)) return;
-    focusKey.current += 1;
-    setRegionId(null);
-    setBoundary(resolved.boundary ?? null);
-    setAoi(resolved.bbox ?? pointSearchBbox([resolved.lon, resolved.lat]));
-    setFocus({ center: [resolved.lon, resolved.lat], zoom: resolved.boundary ? 6 : 7, key: focusKey.current });
-    setRemoteBbox(resolved.bbox ?? pointSearchBbox([resolved.lon, resolved.lat]));
+    void focusAdminArea(stateId, 1);
   }
 
   function selectRegion(region: (typeof REGIONS)[number]) {
     focusKey.current += 1;
     setSearch(lang === 'zh' ? region.name : region.nameEn);
-    syncAdminSelection(region.id);
     setRegionId(region.id);
     setAoi(null);
     setBoundary(null);
@@ -352,49 +414,62 @@ export function Explore() {
   }
 
   useEffect(() => {
-    if (globalCountries.length && regionId) {
-      const region = REGIONS.find((item) => item.id === regionId);
-      if (region) syncAdminSelection(region.id);
+    const country = globalCountries.find((item) => item.id === adminCountry);
+    if (!country) {
+      setGlobalStates([]);
+      return;
     }
-    // Sync URL-selected local hotspots once the global directory arrives.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [globalCountries, regionId]);
+    const requestId = ++stateRequestRef.current;
+    setAdminLoading(true);
+    fetchGlobalStates(country.iso3, adminLang)
+      .then((states) => {
+        if (requestId === stateRequestRef.current) setGlobalStates(states);
+      })
+      .catch(() => {
+        if (requestId === stateRequestRef.current) setGlobalStates([]);
+      })
+      .finally(() => {
+        if (requestId === stateRequestRef.current) setAdminLoading(false);
+      });
+  }, [adminCountry, adminLang, globalCountries]);
 
-  // Re-fetch city names when the site language changes so an already selected
-  // administrative path does not keep stale labels from the previous locale.
   useEffect(() => {
-    if (!adminCountry || !adminLevel1) return;
-    const country = globalCountries.find((item) => item.iso2 === adminCountry);
-    if (!country) return;
+    if (!adminLevel1) {
+      setGlobalCities([]);
+      return;
+    }
     const requestId = ++cityRequestRef.current;
     setAdminLoading(true);
-    fetchGlobalCities(country.name, adminLevel1, lang === 'zh' ? 'zh' : 'en')
+    fetchGlobalCities(adminLevel1, adminLang)
       .then((cities) => {
         if (requestId === cityRequestRef.current) setGlobalCities(cities);
       })
       .catch(() => {
-        const localCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === adminCountry);
-        const fallback = localCountry?.subdivisions.find((area) =>
-          area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1,
-        );
-        if (requestId === cityRequestRef.current) {
-          setGlobalCities(fallback?.localities.map((locality) => {
-            const region = REGIONS.find((item) => item.id === locality.regionId);
-            return {
-              id: locality.id,
-              name: lang === 'zh' ? locality.name : locality.nameEn,
-              displayName: locality.nameEn,
-              lat: region?.center[1] ?? 0,
-              lon: region?.center[0] ?? 0,
-              bbox: region ? regionSearchBbox(region) : undefined,
-            };
-          }) ?? []);
-        }
+        if (requestId === cityRequestRef.current) setGlobalCities([]);
       })
       .finally(() => {
         if (requestId === cityRequestRef.current) setAdminLoading(false);
       });
-  }, [adminCountry, adminLevel1, globalCountries, lang]);
+  }, [adminLang, adminLevel1]);
+
+  useEffect(() => {
+    if (!adminLevel2) {
+      setGlobalDistricts([]);
+      return;
+    }
+    const requestId = ++districtRequestRef.current;
+    setAdminLoading(true);
+    fetchGlobalDistricts(adminLevel2, adminLang)
+      .then((districts) => {
+        if (requestId === districtRequestRef.current) setGlobalDistricts(districts);
+      })
+      .catch(() => {
+        if (requestId === districtRequestRef.current) setGlobalDistricts([]);
+      })
+      .finally(() => {
+        if (requestId === districtRequestRef.current) setAdminLoading(false);
+      });
+  }, [adminLang, adminLevel2]);
 
   async function handleVectorFile(file?: File) {
     if (!file) return;
@@ -409,6 +484,10 @@ export function Explore() {
       setAdminCountry('');
       setAdminLevel1('');
       setAdminLevel2('');
+      setAdminLevel3('');
+      setGlobalStates([]);
+      setGlobalCities([]);
+      setGlobalDistricts([]);
       setRemoteBbox(bbox);
       setFocus({ center: [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], zoom: 10, key: focusKey.current });
       toast.success(lang === 'zh' ? `已加载 ${file.name}` : `${file.name} loaded`);
@@ -420,10 +499,8 @@ export function Explore() {
   }
 
   function renderAreaSelector() {
-    const selectedGlobalCountry = globalCountries.find((country) => country.iso2 === adminCountry);
-    const localCountry = ADMINISTRATIVE_AREAS.find((country) => country.id === adminCountry || LOCAL_COUNTRY_ISO[country.id] === adminCountry || country.name === selectedGlobalCountry?.name || country.nameEn === selectedGlobalCountry?.name);
-    const selectedCountry = selectedGlobalCountry ?? localCountry;
-    const selectedLevel1 = globalStates.find((state) => state.name === adminLevel1) ?? localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1);
+    const selectedGlobalCountry = globalCountries.find((country) => country.id === adminCountry);
+    const selectedLevel1 = globalStates.find((state) => state.id === adminLevel1);
     return (
       <div className="mt-3 space-y-3 border-t border-border pt-3">
         <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-input-background p-1">
@@ -457,23 +534,12 @@ export function Explore() {
                   value={adminCountry}
                   onChange={(event) => {
                     if (!event.target.value) { clearAdminCountry(); return; }
-                    setAdminCountry(event.target.value);
-                    setAdminLevel1('');
-                    setAdminLevel2('');
-                    setAdminLevel3('');
-                    setGlobalCities([]);
-                    setGlobalDistricts([]);
-                    setAoi(null);
-                    setBoundary(null);
-                    setRemoteBbox(null);
-                    const country = globalCountries.find((item) => item.iso2 === event.target.value);
-                    const nextLocalCountry = ADMINISTRATIVE_AREAS.find((item) => (LOCAL_COUNTRY_ISO[item.id] ?? item.id) === event.target.value);
-                    setGlobalStates(country?.states ?? nextLocalCountry?.subdivisions.map((area) => ({ name: area.name })) ?? []);
+                    selectGlobalCountry(event.target.value);
                   }}
                   className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
                 >
                   <option value="">{t.explore.countryPlaceholder}</option>
-                  {(globalCountries.length ? globalCountries : ADMINISTRATIVE_AREAS.map((country) => ({ iso2: LOCAL_COUNTRY_ISO[country.id] ?? country.id, name: lang === 'zh' ? country.name : country.nameEn, states: country.subdivisions.map((area) => ({ name: area.name })), iso3: country.id }))).map((country) => <option key={country.iso2} value={country.iso2}>{countryLabel(country, lang)}</option>)}
+                  {globalCountries.map((country) => <option key={country.id} value={country.id}>{countryLabel(country, lang)}</option>)}
                 </select>
                 <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
               </div>
@@ -482,7 +548,7 @@ export function Explore() {
               <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel1}</span>{adminLevel1 && <button type="button" aria-label={lang === 'zh' ? '清除一级行政区' : 'Clear first-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel1(); }}><X className="size-3" /></button>}</span>
               <div className="relative"><select
                 value={adminLevel1}
-                disabled={!selectedCountry}
+                disabled={!selectedGlobalCountry}
                 onChange={(event) => {
                   if (!event.target.value) { clearAdminLevel1(); return; }
                   void selectGlobalState(event.target.value);
@@ -490,7 +556,7 @@ export function Explore() {
                 className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">{t.explore.adminLevel1Placeholder}</option>
-                {(globalCountries.find((country) => country.iso2 === adminCountry)?.states ?? localCountry?.subdivisions.map((area) => ({ name: area.name, id: area.id })) ?? []).map((area) => <option key={'id' in area ? area.id : area.name} value={area.name}>{stateLabel(area, adminCountry, lang)}</option>)}
+                {globalStates.map((area) => <option key={area.id} value={area.id}>{stateLabel(area)}</option>)}
               </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
             </label>}
             {adminCountry && adminLevel1 && <label className="block space-y-1">
@@ -505,17 +571,11 @@ export function Explore() {
                   setGlobalDistricts([]);
                   const city = globalCities.find((item) => item.id === event.target.value);
                   if (city) void selectGlobalCity(city);
-                  else {
-                    const locality = localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.find((item) => item.id === event.target.value);
-                    const region = locality && REGIONS.find((item) => item.id === locality.regionId);
-                    if (region) selectRegion(region);
-                  }
                 }}
                 className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">{adminLoading ? (lang === 'zh' ? '加载城市中…' : 'Loading cities…') : t.explore.adminLevel2Placeholder}</option>
-                {globalCities.map((city) => <option key={city.id} value={city.id}>{cityLabel(city, localCountry, adminLevel1, lang)}</option>)}
-                {!globalCities.length && localCountry?.subdivisions.find((area) => area.id === adminLevel1 || area.name === adminLevel1 || area.nameEn === adminLevel1)?.localities.filter((area) => isSecondLevelLocality(area.name)).map((area) => <option key={area.id} value={area.id}>{lang === 'zh' ? area.name : area.nameEn}</option>)}
+                {globalCities.map((city) => <option key={city.id} value={city.id}>{cityLabel(city)}</option>)}
               </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
             </label>}
             {adminCountry && adminLevel1 && adminLevel2 && <label className="block space-y-1">
@@ -532,7 +592,7 @@ export function Explore() {
                 className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">{globalDistricts.length ? t.explore.adminLevel3Placeholder : (lang === 'zh' ? '暂无三级行政区数据' : 'No third-level areas')}</option>
-                {globalDistricts.map((district) => <option key={district.id} value={district.id}>{cityLabel(district, localCountry, adminLevel1, lang)}</option>)}
+                {globalDistricts.map((district) => <option key={district.id} value={district.id}>{cityLabel(district)}</option>)}
               </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
             </label>}
           </div>
@@ -579,14 +639,18 @@ export function Explore() {
     return () => {
       cancelled = true;
     };
-  }, [remoteBbox, filters.cloudMax, filters.dateEnd, filters.dateStart, filters.timeMode, filters.timePreset]);
+  }, [remoteBbox, filters]);
 
   // Filtered results
-  const sourceProducts = remoteProducts ?? PRODUCTS;
+  const sourceProducts = useMemo(
+    () => remoteProducts ?? (catalogProducts && catalogProducts.length > 0 ? catalogProducts : demoDataEnabled ? PRODUCTS : []),
+    [catalogProducts, demoDataEnabled, remoteProducts],
+  );
   const isRemote = remoteProducts !== null;
+  const isDemoProducts = remoteProducts === null && demoDataEnabled && (!catalogProducts || catalogProducts.length === 0);
   const results = useMemo(() => {
     let list: Product[] = sourceProducts;
-    if (!isRemote && regionId) list = list.filter((p) => p.regionId === regionId);
+    if (isDemoProducts && regionId) list = list.filter((p) => p.regionId === regionId);
     if (aoi) list = list.filter((p) => intersects(aoi, p.bbox));
     if (filters.categories.length) list = list.filter((p) => filters.categories.includes(p.category));
     if (filters.processingLevels.length) list = list.filter((p) => filters.processingLevels.includes(p.processingLevel));
@@ -604,15 +668,18 @@ export function Explore() {
       }
     }
 
-    if (filters.cloudMax !== 'all') list = list.filter((p) => p.cloudCover < parseFloat(filters.cloudMax));
+    if (!isRemote && filters.cloudMax !== 'all') list = list.filter((p) => p.cloudCover <= parseFloat(filters.cloudMax));
 
     // 时间筛选
     if (filters.timeMode === 'preset' && filters.timePreset !== 'all') {
       const cutoff = Date.now() - TIME_DAYS[filters.timePreset] * 86400000;
       list = list.filter((p) => new Date(p.captureTime).getTime() >= cutoff);
     } else if (filters.timeMode === 'range' && filters.dateStart && filters.dateEnd) {
-      const startTime = new Date(filters.dateStart).getTime();
-      const endTime = new Date(filters.dateEnd).getTime() + 86400000; // 包含结束日期当天
+      const [startDate, endDate] = filters.dateStart <= filters.dateEnd
+        ? [filters.dateStart, filters.dateEnd]
+        : [filters.dateEnd, filters.dateStart];
+      const startTime = new Date(startDate).getTime();
+      const endTime = new Date(endDate).getTime() + 86400000; // 包含结束日期当天
       list = list.filter((p) => {
         const captureTime = new Date(p.captureTime).getTime();
         return captureTime >= startTime && captureTime < endTime;
@@ -623,7 +690,7 @@ export function Explore() {
     }
 
     return [...list].sort((a, b) => (a.captureTime < b.captureTime ? 1 : -1));
-  }, [aoi, filters, isRemote, regionId, sourceProducts]);
+  }, [aoi, filters, isDemoProducts, isRemote, regionId, sourceProducts]);
 
   const footprints: Footprint[] = useMemo(
     () => results.map((p) => ({ id: p.id, bbox: p.bbox })),
@@ -663,7 +730,9 @@ export function Explore() {
 
   function buyProduct(p: Product) {
     const price = Math.round(Math.max(aoi ? areaKm2 : p.area, p.minArea) * p.unitPrice);
-    addToCart(p, 'raw', price);
+    // Preserve the product's normalized level so list-page purchases match the
+    // detail page, cart line item, and eventual order snapshot.
+    addToCart(p, p.processingLevel, price);
     toast.success(lang === 'zh' ? '已加入购物车' : 'Added to cart');
   }
 
@@ -857,8 +926,10 @@ export function Explore() {
             <div className="tech-label text-[10px] text-muted-foreground">
               {t.explore.resultsCount(results.length)}
             </div>
+            {catalogLoading && !remoteProducts && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在加载已核验产品…' : 'Loading verified products…'}</div>}
+            {catalogError && !remoteProducts && !demoDataEnabled && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? '产品目录暂不可用，请稍后重试' : 'Product catalog is temporarily unavailable'}</div>}
             {remoteLoading && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在查询公开卫星数据…' : 'Querying open satellite data…'}</div>}
-            {remoteError && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? '公开数据源暂不可用，已回退示例数据' : 'Open source unavailable; showing demo data'}</div>}
+            {remoteError && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? (demoDataEnabled ? '公开数据源暂不可用，已回退示例数据' : '公开数据源暂不可用') : (demoDataEnabled ? 'Open source unavailable; showing demo data' : 'Open source unavailable')}</div>}
           </div>
           {!aoi && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -899,8 +970,10 @@ export function Explore() {
                 <div className="tech-label text-[10px] text-muted-foreground">
                   {t.explore.resultsCount(results.length)}
                 </div>
+                {catalogLoading && !remoteProducts && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在加载已核验产品…' : 'Loading verified products…'}</div>}
+                {catalogError && !remoteProducts && !demoDataEnabled && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? '产品目录暂不可用，请稍后重试' : 'Product catalog is temporarily unavailable'}</div>}
                 {remoteLoading && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在查询公开卫星数据…' : 'Querying open satellite data…'}</div>}
-                {remoteError && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? '公开数据源暂不可用，已回退示例数据' : 'Open source unavailable; showing demo data'}</div>}
+                {remoteError && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? (demoDataEnabled ? '公开数据源暂不可用，已回退示例数据' : '公开数据源暂不可用') : (demoDataEnabled ? 'Open source unavailable; showing demo data' : 'Open source unavailable')}</div>}
               </div>
               {!aoi && (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">

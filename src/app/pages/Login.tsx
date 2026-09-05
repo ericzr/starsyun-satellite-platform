@@ -106,9 +106,11 @@ export function Login() {
               <Button type="submit" className="w-full" disabled={loginLoading}>
                 {loginLoading ? (lang === 'zh' ? '登录中...' : 'Signing in...') : (lang === 'zh' ? '登录' : 'Sign In')}
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                {lang === 'zh' ? '演示账号：任意邮箱 + 6位以上密码' : 'Demo: any email + 6+ char password'}
-              </p>
+              {import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true' ? (
+                <p className="text-center text-xs text-muted-foreground">
+                  {lang === 'zh' ? '演示账号：任意邮箱 + 6位以上密码' : 'Demo: any email + 6+ char password'}
+                </p>
+              ) : null}
             </form>
           </TabsContent>
 
