@@ -31,10 +31,13 @@ const checks = [
   { name: 'wallet balance RPC', resource: 'rpc/wallet_available_balance', method: 'POST', body: { p_wallet_id: '00000000-0000-4000-8000-000000000000' }, expected: [200] },
   // These probes deliberately use nonexistent IDs, so a correctly installed
   // function returns its domain validation error without mutating production.
-  { name: 'wallet transaction RPC', resource: 'rpc/record_wallet_transaction', method: 'POST', body: { p_wallet_id: '00000000-0000-4000-8000-000000000000', p_direction: 'credit', p_amount: 1, p_currency: 'CNY', p_reference_type: 'payment', p_reference_id: 'schema-check', p_idempotency_key: 'schema-check-wallet-1', p_status: 'posted', p_provider: 'bank-transfer', p_provider_transaction_id: 'schema-check', p_metadata: {} }, expected: [400] },
-  { name: 'wallet order hold RPC', resource: 'rpc/hold_order_from_wallet', method: 'POST', body: { p_order_id: '00000000-0000-4000-8000-000000000000', p_user_id: '00000000-0000-4000-8000-000000000000', p_amount: 1, p_currency: 'CNY', p_idempotency_key: 'schema-check-hold-1', p_request_id: 'schema-check' }, expected: [400] },
+  // PostgREST exposes PostgreSQL's P0002 (no_data_found) as HTTP 500. Match
+  // the error code as well as the status so a missing test row proves that
+  // the protected function is installed without mutating production data.
+  { name: 'wallet transaction RPC', resource: 'rpc/record_wallet_transaction', method: 'POST', body: { p_wallet_id: '00000000-0000-4000-8000-000000000000', p_direction: 'credit', p_amount: 1, p_currency: 'CNY', p_reference_type: 'payment', p_reference_id: 'schema-check', p_idempotency_key: 'schema-check-wallet-1', p_status: 'posted', p_provider: 'bank-transfer', p_provider_transaction_id: 'schema-check', p_metadata: {} }, expected: [400], expectedErrorCodes: ['P0002'] },
+  { name: 'wallet order hold RPC', resource: 'rpc/hold_order_from_wallet', method: 'POST', body: { p_order_id: '00000000-0000-4000-8000-000000000000', p_user_id: '00000000-0000-4000-8000-000000000000', p_amount: 1, p_currency: 'CNY', p_idempotency_key: 'schema-check-hold-1', p_request_id: 'schema-check' }, expected: [400], expectedErrorCodes: ['P0002'] },
   { name: 'payment event RPC', resource: 'rpc/record_payment_event', method: 'POST', body: { p_order_id: '00000000-0000-4000-8000-000000000000', p_provider: 'stripe', p_provider_event_id: 'schema-check-event-1', p_event_type: 'schema.check', p_status: 'verified', p_amount: 1, p_currency: 'CNY', p_payload: {} }, expected: [400, 409] },
-  { name: 'order transition RPC', resource: 'rpc/transition_order', method: 'POST', body: { p_order_id: '00000000-0000-4000-8000-000000000000', p_to_status: 'paid', p_actor_type: 'system', p_actor_id: 'schema-check', p_request_id: 'schema-check', p_payload: {} }, expected: [400] },
+  { name: 'order transition RPC', resource: 'rpc/transition_order', method: 'POST', body: { p_order_id: '00000000-0000-4000-8000-000000000000', p_to_status: 'paid', p_actor_type: 'system', p_actor_id: 'schema-check', p_request_id: 'schema-check', p_payload: {} }, expected: [400], expectedErrorCodes: ['P0002'] },
 ];
 const headers = {
   apikey: key,
@@ -52,7 +55,20 @@ for (const check of checks) {
       signal: AbortSignal.timeout(10_000),
     });
     const expected = check.expected || [200];
-    if (!expected.includes(response.status)) failures.push(`${check.name} (${response.status}, expected ${expected.join('/')})`);
+    if (!expected.includes(response.status)) {
+      let errorCode = '';
+      if (check.expectedErrorCodes?.length) {
+        try {
+          const payload = await response.json() as { code?: unknown };
+          errorCode = typeof payload.code === 'string' ? payload.code : '';
+        } catch {
+          // Keep the normal status failure below when the body is not JSON.
+        }
+      }
+      if (!check.expectedErrorCodes?.includes(errorCode)) {
+        failures.push(`${check.name} (${response.status}, expected ${expected.join('/')})`);
+      }
+    }
   } catch {
     failures.push(`${check.name} (unreachable)`);
   }
