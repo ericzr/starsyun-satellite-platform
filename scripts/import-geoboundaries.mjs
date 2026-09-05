@@ -182,7 +182,7 @@ function bboxGeometry(geometry) {
   return Number.isFinite(minLon) ? [minLon, minLat, maxLon, maxLat] : null;
 }
 
-function simplifyRing(ring, maxPoints = 500) {
+function simplifyRing(ring, maxPoints = 250) {
   if (!Array.isArray(ring) || ring.length <= maxPoints) return ring;
   const stride = Math.ceil((ring.length - 1) / (maxPoints - 1));
   const sampled = [];
@@ -194,11 +194,21 @@ function simplifyRing(ring, maxPoints = 500) {
 function simplifyGeometry(geometry) {
   if (!geometry || geometry.type === 'Point' || geometry.type === 'MultiPoint') return geometry;
   if (geometry.type === 'LineString' || geometry.type === 'MultiLineString') return geometry;
-  if (geometry.type === 'Polygon') {
-    return { ...geometry, coordinates: geometry.coordinates.map((ring) => simplifyRing(ring)) };
-  }
-  if (geometry.type === 'MultiPolygon') {
-    return { ...geometry, coordinates: geometry.coordinates.map((polygon) => polygon.map((ring) => simplifyRing(ring))) };
+  const rings = geometry.type === 'Polygon'
+    ? geometry.coordinates
+    : geometry.type === 'MultiPolygon'
+      ? geometry.coordinates.flat()
+      : null;
+  if (rings) {
+    const totalPoints = rings.reduce((sum, ring) => sum + (Array.isArray(ring) ? ring.length : 0), 0);
+    const maxTotalPoints = 5000;
+    const perRingLimit = totalPoints > maxTotalPoints
+      ? Math.max(12, Math.floor(maxTotalPoints / Math.max(1, rings.length)))
+      : 250;
+    if (geometry.type === 'Polygon') {
+      return { ...geometry, coordinates: geometry.coordinates.map((ring) => simplifyRing(ring, perRingLimit)) };
+    }
+    return { ...geometry, coordinates: geometry.coordinates.map((polygon) => polygon.map((ring) => simplifyRing(ring, perRingLimit))) };
   }
   return geometry;
 }
