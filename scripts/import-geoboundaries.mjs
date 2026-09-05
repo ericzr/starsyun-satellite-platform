@@ -145,6 +145,16 @@ const chinaNameAliases = [
 ];
 const chinaNameAliasMap = new Map(chinaNameAliases.flatMap(([aliases, value]) => aliases.map((alias) => [alias.toLowerCase(), value])));
 
+// A handful of coastal features in the 2017 China source are outside the
+// generalized parent polygon/bbox or use a newer administrative name. Keep
+// these corrections explicit and reviewable instead of guessing by proximity.
+const knownParentNames = new Map([
+  ['CHN|2|shengsixian', 'zhejiang province'],
+  ['CHN|3|changdao county', 'penglaixian'],
+  ['CHN|3|dongtou county', 'wenzhoushi'],
+  ['CHN|3|金湾区', 'zhuhaishi'],
+]);
+
 async function getJson(url) {
   const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(60_000) });
   if (!response.ok) throw new Error(`${response.status} ${url}`);
@@ -275,7 +285,16 @@ function deduplicateRows(rows) {
   return { kept, dropped };
 }
 
-function parentFor(child, parents) {
+function parentFor(child, parents, iso3) {
+  const preferredName = knownParentNames.get(`${iso3}|${child.level}|${child.nameEn.toLowerCase()}`);
+  if (preferredName) {
+    const preferred = parents.find((parent) => parent.nameEn.toLowerCase() === preferredName);
+    if (preferred) return preferred.id;
+  }
+  // Xisha is published as an ADM3 feature but the source has no corresponding
+  // ADM2 Sansha feature. It is intentionally skipped rather than attached to
+  // an unrelated Hainan county.
+  if (iso3 === 'CHN' && child.level === 3 && child.nameEn === '西沙群岛') return null;
   const point = representativePoint(child.geometry, child.bbox);
   const candidates = parents
     .filter((parent) => bboxContains(parent.bbox, child.bbox) || bboxContainsPoint(parent.bbox, point))
@@ -463,9 +482,16 @@ for (const iso3 of countries) {
     const children = byLevel.get(level) || [];
     const parents = byLevel.get(level - 1) || [];
     for (const child of children) {
-      if (parents.length) child.parentId = parentFor(child, parents) || null;
+      if (parents.length) child.parentId = parentFor(child, parents, iso3) || null;
     }
-    const { kept, dropped } = deduplicateRows(children);
+    const unresolved = children.filter((child) => level > 0 && !child.parentId);
+    if (unresolved.length) {
+      await deactivateRows(unresolved);
+      for (const child of unresolved) console.warn(`Skipped orphan ${child.id} (${child.nameEn}); no reliable parent in source`);
+    }
+    const resolved = children.filter((child) => child.parentId || level === 0);
+    byLevel.set(level, resolved);
+    const { kept, dropped } = deduplicateRows(resolved);
     if (dropped.length) await deactivateRows(dropped);
     byLevel.set(level, kept);
   }
