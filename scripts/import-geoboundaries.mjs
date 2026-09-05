@@ -244,6 +244,37 @@ function bboxContainsPoint(bbox, point) {
   return bbox && point && bbox[0] <= point[0] && bbox[1] <= point[1] && bbox[2] >= point[0] && bbox[3] >= point[1];
 }
 
+function bboxOverlapRatio(left, right) {
+  if (!left || !right) return 0;
+  const intersection = Math.max(0, Math.min(left[2], right[2]) - Math.max(left[0], right[0]))
+    * Math.max(0, Math.min(left[3], right[3]) - Math.max(left[1], right[1]));
+  const smaller = Math.min(bboxArea(left), bboxArea(right));
+  return smaller > 0 ? intersection / smaller : 0;
+}
+
+function deduplicateRows(rows) {
+  const kept = [];
+  const dropped = [];
+  for (const row of rows) {
+    const duplicate = kept.find((candidate) => candidate.parentId === row.parentId
+      && candidate.nameEn.toLowerCase() === row.nameEn.toLowerCase()
+      && bboxOverlapRatio(candidate.bbox, row.bbox) >= 0.98);
+    if (duplicate) {
+      // Prefer the larger polygon when a source publishes both a parent unit
+      // and a duplicate sub-unit under the same name.
+      if (bboxArea(row.bbox) > bboxArea(duplicate.bbox)) {
+        dropped.push(duplicate);
+        kept[kept.indexOf(duplicate)] = row;
+      } else {
+        dropped.push(row);
+      }
+    } else {
+      kept.push(row);
+    }
+  }
+  return { kept, dropped };
+}
+
 function parentFor(child, parents) {
   const point = representativePoint(child.geometry, child.bbox);
   const candidates = parents
@@ -344,6 +375,24 @@ async function writeBatch(batch) {
   if (!response.ok) throw new Error(`Supabase upsert failed (${response.status}): ${await response.text()}`);
 }
 
+async function deactivateRows(rows) {
+  if (!rows.length) return;
+  const ids = rows.map((row) => row.id).join(',');
+  const response = await fetch(`${supabaseUrl}/rest/v1/admin_areas?id=in.(${ids})`, {
+    method: 'PATCH',
+    headers: {
+      apikey: supabaseKey,
+      ...(supabaseKey.startsWith('sb_') ? {} : { Authorization: `Bearer ${supabaseKey}` }),
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({ is_active: false }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) throw new Error(`Supabase deactivation failed (${response.status}): ${await response.text()}`);
+  for (const row of rows) console.warn(`Deactivated overlapping duplicate ${row.id} (${row.nameEn})`);
+}
+
 async function upsert(rows) {
   let batch = [];
   let bytes = 2;
@@ -416,6 +465,9 @@ for (const iso3 of countries) {
     for (const child of children) {
       if (parents.length) child.parentId = parentFor(child, parents) || null;
     }
+    const { kept, dropped } = deduplicateRows(children);
+    if (dropped.length) await deactivateRows(dropped);
+    byLevel.set(level, kept);
   }
   for (const level of levels) {
     const rows = byLevel.get(level) || [];
