@@ -43,6 +43,26 @@ if (!supabaseUrl || !supabaseKey) {
 const GEOBOUNDARIES_API = 'https://www.geoboundaries.org/api/current/gbOpen';
 const REST_COUNTRIES_API = 'https://restcountries.com/v3.1/all?fields=cca2,cca3';
 const source = 'geoBoundaries-gbOpen';
+// country_iso2 is optional in the database. Keep the first production imports
+// deterministic even when the legacy REST Countries endpoint is unavailable;
+// other countries can still be imported with their ISO3 code and enriched in a
+// later metadata pass.
+const fallbackIso2 = new Map([
+  ['CHN', 'CN'],
+  ['ARE', 'AE'],
+  ['SGP', 'SG'],
+  ['USA', 'US'],
+  ['GBR', 'GB'],
+  ['JPN', 'JP'],
+  ['KOR', 'KR'],
+  ['IND', 'IN'],
+  ['AUS', 'AU'],
+  ['DEU', 'DE'],
+  ['FRA', 'FR'],
+  ['CAN', 'CA'],
+  ['BRA', 'BR'],
+  ['RUS', 'RU'],
+]);
 // Taiwan is represented as a first-level administrative area under CHN in the
 // platform directory. Do not expose an additional standalone country entry.
 const suppressedStandaloneCountries = new Set(['TWN']);
@@ -275,8 +295,19 @@ async function loadDataset(meta, iso3, level, iso2) {
 }
 
 async function iso2Map() {
-  const payload = await getJson(REST_COUNTRIES_API);
-  return new Map(payload.map((country) => [String(country.cca3 || '').toUpperCase(), String(country.cca2 || '').toUpperCase()]));
+  try {
+    const payload = await getJson(REST_COUNTRIES_API);
+    if (Array.isArray(payload)) {
+      const remote = new Map(payload
+        .map((country) => [String(country.cca3 || '').toUpperCase(), String(country.cca2 || '').toUpperCase()])
+        .filter(([iso3, iso2]) => iso3 && iso2));
+      return new Map([...fallbackIso2, ...remote]);
+    }
+    console.warn('REST Countries returned a non-list response; using fallback ISO2 mappings');
+  } catch (error) {
+    console.warn(`REST Countries unavailable; using fallback ISO2 mappings: ${error.message}`);
+  }
+  return fallbackIso2;
 }
 
 async function writeBatch(batch) {
