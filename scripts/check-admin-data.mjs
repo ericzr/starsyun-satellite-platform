@@ -61,7 +61,7 @@ if (emptyGeometryResponse) {
   for (const row of emptyGeometryRows) failures.push(`empty geometry on ${row.id}`);
 }
 
-const rowsResponse = await request(`admin_areas?select=id,country_iso3,level,parent_id,name_en,name_local,source_version&country_iso3=eq.${country}&is_active=eq.true&order=level.asc&limit=50000`).catch((error) => {
+const rowsResponse = await request(`admin_areas?select=id,country_iso3,level,parent_id,name_en,name_local,bbox,source_version&country_iso3=eq.${country}&is_active=eq.true&order=level.asc&limit=50000`).catch((error) => {
   failures.push(`directory query failed: ${error.message}`);
   return null;
 });
@@ -88,12 +88,33 @@ for (const row of rows) {
   }
 }
 
-const duplicateNames = new Set();
+function bboxArea(bbox) {
+  return Array.isArray(bbox) && bbox.length === 4
+    ? Math.max(0, Number(bbox[2]) - Number(bbox[0])) * Math.max(0, Number(bbox[3]) - Number(bbox[1]))
+    : 0;
+}
+
+function overlapRatio(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== 4 || right.length !== 4) return 0;
+  const intersection = Math.max(0, Math.min(Number(left[2]), Number(right[2])) - Math.max(Number(left[0]), Number(right[0])))
+    * Math.max(0, Math.min(Number(left[3]), Number(right[3])) - Math.max(Number(left[1]), Number(right[1])));
+  const smaller = Math.min(bboxArea(left), bboxArea(right));
+  return smaller > 0 ? intersection / smaller : 0;
+}
+
+const siblingNames = new Map();
 for (const row of rows) {
   if (row.parent_id == null) continue;
   const keyName = `${row.parent_id}\u0000${String(row.name_en || '').trim().toLowerCase()}`;
-  if (duplicateNames.has(keyName)) failures.push(`duplicate sibling name: ${row.name_en} (${row.parent_id})`);
-  duplicateNames.add(keyName);
+  const previous = siblingNames.get(keyName) || [];
+  // A single administrative unit may be represented by several islands or
+  // disconnected polygons. Only overlapping bboxes indicate a real duplicate;
+  // disjoint same-name siblings remain valid and are disambiguated by parent.
+  if (previous.some((candidate) => overlapRatio(candidate.bbox, row.bbox) >= 0.98)) {
+    failures.push(`duplicate overlapping sibling name: ${row.name_en} (${row.parent_id})`);
+  }
+  previous.push(row);
+  siblingNames.set(keyName, previous);
 }
 
 if (country === 'CHN') {

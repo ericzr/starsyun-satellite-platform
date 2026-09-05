@@ -234,13 +234,30 @@ function bboxContains(outer, inner) {
   return outer && inner && outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3];
 }
 
+function bboxArea(bbox) {
+  return bbox && bbox.length === 4
+    ? Math.max(0, bbox[2] - bbox[0]) * Math.max(0, bbox[3] - bbox[1])
+    : Number.POSITIVE_INFINITY;
+}
+
+function bboxContainsPoint(bbox, point) {
+  return bbox && point && bbox[0] <= point[0] && bbox[1] <= point[1] && bbox[2] >= point[0] && bbox[3] >= point[1];
+}
+
 function parentFor(child, parents) {
   const point = representativePoint(child.geometry, child.bbox);
   const candidates = parents
-    .filter((parent) => bboxContains(parent.bbox, child.bbox) || (parent.bbox?.[0] <= point[0] && parent.bbox?.[1] <= point[1] && parent.bbox?.[2] >= point[0] && parent.bbox?.[3] >= point[1]))
+    .filter((parent) => bboxContains(parent.bbox, child.bbox) || bboxContainsPoint(parent.bbox, point))
     .filter((parent) => pointInGeometry(point, parent.geometry))
-    .sort((a, b) => ((a.bbox[2] - a.bbox[0]) * (a.bbox[3] - a.bbox[1])) - ((b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1])));
-  return candidates[0]?.id;
+    .sort((a, b) => bboxArea(a.bbox) - bboxArea(b.bbox));
+  if (candidates[0]) return candidates[0].id;
+
+  // Islands and enclaves can sit just outside a parent's polygon due to
+  // coastline generalisation. Keep the relationship deterministic by using
+  // the smallest parent bbox containing the child bbox/representative point.
+  return parents
+    .filter((parent) => bboxContains(parent.bbox, child.bbox) || bboxContainsPoint(parent.bbox, point))
+    .sort((a, b) => bboxArea(a.bbox) - bboxArea(b.bbox))[0]?.id;
 }
 
 function metadataList(payload, iso3, level) {
@@ -274,7 +291,9 @@ async function loadDataset(meta, iso3, level, iso2) {
     if (!geometry || !bbox) return [];
     const properties = feature.properties || {};
     const shapeId = String(properties.shapeID || properties.shapeId || index);
-    const name = String(properties.shapeName || properties.name || `${iso3} ADM${level} ${index + 1}`).trim();
+    let name = String(properties.shapeName || properties.name || `${iso3} ADM${level} ${index + 1}`).trim();
+    if (iso3 === 'CHN' && level === 1 && /^Guangzhou Province$/iu.test(name)) name = 'Guangdong Province';
+    if (iso3 === 'CHN' && level === 2 && /^CHN ADM2 \d+$/u.test(name)) name = 'Macau';
     return [{
       id: `${iso3}-ADM${level}-${shapeId}`,
       source,
