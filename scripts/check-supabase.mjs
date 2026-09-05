@@ -59,7 +59,7 @@ for (const check of checks) {
       let errorCode = '';
       if (check.expectedErrorCodes?.length) {
         try {
-          const payload = await response.json() as { code?: unknown };
+          const payload = await response.json();
           errorCode = typeof payload.code === 'string' ? payload.code : '';
         } catch {
           // Keep the normal status failure below when the body is not JSON.
