@@ -15,6 +15,17 @@ StarSyun 的正式行政区目录采用 [geoBoundaries gbOpen](https://www.geobo
 
 ## 首次导入
 
+### 生产导入快照（2026-09-05）
+
+- geoBoundaries gbOpen ADM0 已导入 230 个国家/地区。
+- 已完成中国 ADM0-ADM3（5,283 条）、阿联酋 ADM0-ADM1（8 条）、新加坡 ADM0-ADM2（61 条）。
+- 已完成美国、加拿大、澳大利亚、日本、韩国、印度、德国、法国 ADM0-ADM2；核心市场的父子关系和几何验收均通过。
+- 中国台湾省作为 CHN ADM1 保留，不创建独立 TWN 国家记录。
+- 个别国家没有公开 ADM2/ADM3，导入器会记录 404 并跳过；不会用地理编码结果伪造缺失层级。
+- 大型边界使用简化 GeoJSON（每个行政区总点数上限）以控制 Supabase JSONB 写入和前端地图性能；原始来源 URL、版本和 bbox/质心仍被保存。
+
+后续导入应按国家和层级分批执行，并在每批完成后运行 `npm run check:admin-data -- --country=<ISO3>`；不要一次性并发写入全部 ADM2/ADM3。
+
 在有 Supabase 服务端密钥的环境执行：
 
 ```bash
