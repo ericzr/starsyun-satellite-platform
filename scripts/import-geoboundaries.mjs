@@ -182,7 +182,7 @@ function bboxGeometry(geometry) {
   return Number.isFinite(minLon) ? [minLon, minLat, maxLon, maxLat] : null;
 }
 
-function simplifyRing(ring, maxPoints = 2000) {
+function simplifyRing(ring, maxPoints = 500) {
   if (!Array.isArray(ring) || ring.length <= maxPoints) return ring;
   const stride = Math.ceil((ring.length - 1) / (maxPoints - 1));
   const sampled = [];
