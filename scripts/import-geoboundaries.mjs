@@ -182,6 +182,27 @@ function bboxGeometry(geometry) {
   return Number.isFinite(minLon) ? [minLon, minLat, maxLon, maxLat] : null;
 }
 
+function simplifyRing(ring, maxPoints = 2000) {
+  if (!Array.isArray(ring) || ring.length <= maxPoints) return ring;
+  const stride = Math.ceil((ring.length - 1) / (maxPoints - 1));
+  const sampled = [];
+  for (let index = 0; index < ring.length - 1; index += stride) sampled.push(ring[index]);
+  sampled.push(ring[ring.length - 1]);
+  return sampled;
+}
+
+function simplifyGeometry(geometry) {
+  if (!geometry || geometry.type === 'Point' || geometry.type === 'MultiPoint') return geometry;
+  if (geometry.type === 'LineString' || geometry.type === 'MultiLineString') return geometry;
+  if (geometry.type === 'Polygon') {
+    return { ...geometry, coordinates: geometry.coordinates.map((ring) => simplifyRing(ring)) };
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return { ...geometry, coordinates: geometry.coordinates.map((polygon) => polygon.map((ring) => simplifyRing(ring))) };
+  }
+  return geometry;
+}
+
 function representativePoint(geometry, bbox) {
   const ringCentroid = (ring) => {
     let areaTwice = 0;
@@ -364,7 +385,7 @@ async function loadDataset(meta, iso3, level, iso2) {
       nameLocal: localNames(properties, iso3, name),
       centroid: representativePoint(geometry, bbox),
       bbox,
-      geometry,
+      geometry: simplifyGeometry(geometry),
     }];
   });
 }
