@@ -61,6 +61,8 @@ type ProviderAdapter = {
 | 历史数据支付 | 冻结报价后支付 | 商品授权、价税规则、样片规则 | 付款成功后才签发交付 |
 | 文件交付 | 腾讯 COS 私有桶 | Bucket、地域、最小权限子账号、生命周期规则 | COS 真实签名链接、撤销和下载审计验收 |
 
+交付登记会先由服务端对 Object Key 发起一次签名 `HeadObject` 校验。运营人员需要先将文件上传到私有 `delivery` 桶/前缀，再在后台登记；不存在的对象或与填写大小不一致的对象会被拒绝，不能标记订单为已交付。交付子账号长期只保留 `GetObject`、`HeadObject`、`PutObject`，不保留删除权限。
+
 ## 生产执行顺序
 
 1. 在 Supabase SQL Editor 按顺序执行 `007_create_platform_foundation.sql`、`008_business_workflow_functions.sql` 和 `009_order_quote_items.sql`，再执行 `npm run check:supabase`。

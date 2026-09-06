@@ -1,6 +1,6 @@
 import { GatewayError } from './stac';
 import { persistenceConfig } from './inquiries';
-import { deliveryBucket, signedCosObjectUrl } from './cos';
+import { deliveryBucket, headDeliveryObject, signedCosObjectUrl } from './cos';
 import { supabaseApiHeaders } from './supabase';
 
 export interface DeliveryAssetInput {
@@ -65,7 +65,13 @@ async function rest(path: string, init: RequestInit = {}) {
 
 export async function createDeliveryAsset(orderId: string, input: DeliveryAssetInput, createdBy: string) {
   uuid(orderId, 'order id');
-  const record = { id: crypto.randomUUID(), order_id: orderId, object_key: input.objectKey, bucket: deliveryBucket(), file_name: input.fileName, content_type: input.contentType, size_bytes: input.sizeBytes ?? null, sha256: input.sha256 ?? null, created_by: createdBy, created_at: new Date().toISOString() };
+  // Do not let a typo or an unfinished upload become a "delivered" asset.
+  // HeadObject is part of the minimal COS policy specifically for this check.
+  const remote = await headDeliveryObject(input.objectKey);
+  if (input.sizeBytes != null && remote.sizeBytes != null && input.sizeBytes !== remote.sizeBytes) {
+    throw new GatewayError(409, 'delivery object size does not match COS');
+  }
+  const record = { id: crypto.randomUUID(), order_id: orderId, object_key: input.objectKey, bucket: deliveryBucket(), file_name: input.fileName, content_type: input.contentType, size_bytes: input.sizeBytes ?? remote.sizeBytes ?? null, sha256: input.sha256 ?? null, created_by: createdBy, created_at: new Date().toISOString() };
   const response = await rest('delivery_assets', { method: 'POST', body: JSON.stringify(record), headers: { Prefer: 'return=representation' } });
   const rows = (await response.json()) as Row[];
   if (!rows[0]) throw new GatewayError(502, 'delivery persistence returned no record');
