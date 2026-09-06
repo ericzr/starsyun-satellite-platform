@@ -15,16 +15,17 @@ StarSyun 的正式行政区目录采用 [geoBoundaries gbOpen](https://www.geobo
 
 ## 首次导入
 
-### 生产导入快照（2026-09-05）
+### 生产目录快照与已知阻塞（2026-09-06）
 
 - geoBoundaries gbOpen ADM0 已导入 230 个国家/地区。
-- 已完成中国 ADM0-ADM3（5,283 条）、阿联酋 ADM0-ADM1（8 条）、新加坡 ADM0-ADM2（61 条）。
-- 已完成美国、加拿大、澳大利亚、日本、韩国、印度、德国、法国 ADM0-ADM2；核心市场的父子关系和几何验收均通过。
+- 当前目录计数为：中国 ADM0-ADM3 共 5,283 条，阿联酋 ADM0-ADM1 共 8 条，新加坡 ADM0-ADM2 共 61 条。这是导入快照，不代表业务语义正确或全球三级覆盖完成。
+- 复核确认：现有中国 ADM2 把旗、县等三级实体混入二级；二级到三级父子关系不可靠，且部分记录没有中文显示名。该批中国 ADM1-ADM3 必须以权威行政区划重建，不能继续作为生产级联选择或 AOI 交易依据。
+- 非中国的 ADM3 当前没有全球覆盖；没有公开三级数据的国家应在产品中明确降级，不可用地理编码或猜测边界补齐。
 - 中国台湾省作为 CHN ADM1 保留，不创建独立 TWN 国家记录。
 - 个别国家没有公开 ADM2/ADM3，导入器会记录 404 并跳过；不会用地理编码结果伪造缺失层级。
 - 大型边界使用简化 GeoJSON（每个行政区总点数上限）以控制 Supabase JSONB 写入和前端地图性能；原始来源 URL、版本和 bbox/质心仍被保存。
 
-后续导入应按国家和层级分批执行，并在每批完成后运行 `npm run check:admin-data -- --country=<ISO3>`；不要一次性并发写入全部 ADM2/ADM3。
+后续导入应按国家和层级分批执行，并在每批完成后运行 `npm run check:admin-data -- --country=<ISO3> --require-levels=<levels>`；不要一次性并发写入全部 ADM2/ADM3。该审计同时检查分页完整性、空几何、层级、中文展示名和中国抽样链路（内蒙古 → 鄂尔多斯市 → 达拉特旗），但不能替代国家级边界抽检和来源授权复核。
 
 在有 Supabase 服务端密钥的环境执行：
 
@@ -44,12 +45,12 @@ node scripts/import-geoboundaries.mjs --country=ALL --levels=2,3
 
 ADM3 数据量和几何体很大，生产导入应在服务器后台运行并监控磁盘、Supabase 请求量。导入器保存数据源的原始 GeoJSON，按最多 100 条且不超过约 1.5 MB 的批次 upsert，并跳过没有公开 ADM3 数据的国家，不用地理编码结果“补齐”假数据。
 
-导入后先执行目录验收，检查数量、父子层级、空几何、重复兄弟名称，以及中国台湾省的归属：
+导入后先执行目录验收，检查数量、父子层级、空几何、重复兄弟名称，以及中国台湾省的归属。中国的完整三级目录必须显式要求 0 到 3 级：
 
 ```bash
 SUPABASE_URL=https://<project>.supabase.co \
 SUPABASE_SECRET_KEY='<server-only-key>' \
-npm run check:admin-data -- --country=CHN
+npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3
 ```
 
 ## API
@@ -64,4 +65,4 @@ npm run check:admin-data -- --country=CHN
 
 ## 更新与回滚
 
-目录使用稳定的区域 ID 进行 upsert，`source_version` 记录当前边界版本。升级前先在 Supabase 备份/临时项目中执行数量、重复名称、空父级和随机边界抽样检查，再更新生产目录；需要回滚时，重新导入上一版 geoBoundaries 发布数据或从数据库备份恢复。正式上线后建议每季度更新一次，行政区变更频繁的国家按月更新。
+目录使用稳定的区域 ID 进行 upsert，`source_version` 记录当前边界版本。升级前先在 Supabase 备份/临时项目中执行数量、空父级、抽样行政链路与随机边界抽样检查，再更新生产目录；需要回滚时，重新导入上一版通过验收的数据或从数据库备份恢复。正式上线后建议每季度更新一次，行政区变更频繁的国家按月更新。

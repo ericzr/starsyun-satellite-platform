@@ -84,7 +84,8 @@ export async function headDeliveryObject(objectKey: string): Promise<CosObjectMe
   }
   if (response.status === 404) throw new GatewayError(404, 'delivery object was not found in COS');
   if (!response.ok) throw new GatewayError(502, `delivery object verification failed (${response.status})`);
-  const contentLength = Number(response.headers.get('content-length'));
+  const contentLengthHeader = response.headers.get('content-length');
+  const contentLength = contentLengthHeader == null ? Number.NaN : Number(contentLengthHeader);
   return {
     sizeBytes: Number.isSafeInteger(contentLength) && contentLength >= 0 ? contentLength : undefined,
     contentType: response.headers.get('content-type') || undefined,

@@ -63,7 +63,7 @@ tar -czf starsyun-release.tgz dist dist-server package.json scripts supabase/mig
 
 发布前可运行 npm run check:release 检查迁移文件和构建产物；在服务器准备好运行时文件后，再用 npm run check:release -- --runtime-env=/etc/starsyun/starsyun.env 检查必需配置、生产 CORS 和 COS 变量（不会打印密钥）。
 
-服务器运行时可执行 `npm run check:supabase`，它只验证 `001` 至 `009` 对应的业务表、受保护 RPC 与 `orders` 的支付字段是否可通过 Supabase REST 访问，不会读取或输出业务数据。`004` 是订单表字段迁移，并不创建独立支付表；`007` 增加行政区、图源、供应商、分析和钱包的生产基础表，`008` 增加原子账本/订单状态函数，`009` 允许报价订单保存商品快照明细。
+服务器运行时可执行 `npm run check:supabase`，它只验证 `001` 至 `010` 对应的业务表、受保护 RPC 与 `orders` 的支付字段是否可通过 Supabase REST 访问，不会读取或输出业务数据。生产当前 26 项结构检查已通过；该检查不替代数据内容、RLS 策略和恢复演练验收。
 
 构建产物中：
 

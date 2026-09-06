@@ -21,7 +21,7 @@
 
 | 优先级 | 接口 | 需要的商务/技术材料 | 先实现的能力 | 启用交易前门槛 |
 | --- | --- | --- | --- | --- |
-| P0 | geoBoundaries gbOpen | 无账号；确认数据版本与许可证 | ADM0-ADM3 导入、边界检索、面积/AOI | 执行 `007`、导入中国和目标国家、人工抽样边界 |
+| P0 | geoBoundaries gbOpen | 无账号；确认数据版本与许可证 | ADM0-ADM3 导入、边界检索、面积/AOI | 重建中国 ADM1-ADM3；通过新审计器和人工抽样后才用于交易 |
 | P0 | Earth Search | 无账号 | Sentinel-2 STAC 搜索 | 只标为开放数据，不作为收费库存 |
 | P0 | Copernicus Data Space | 组织账号、OAuth client、配额/下载政策 | STAC/OData 搜索、授权下载 | 记录条款、下载许可、配额和归属 |
 | P1 | Sentinel Hub | 组织账号、OAuth client、套餐/处理配额 | Catalog、Process、Batch、统计分析 | 生产 client、账单上限、输出许可 |
@@ -65,12 +65,12 @@ type ProviderAdapter = {
 
 ## 生产执行顺序
 
-1. 在 Supabase SQL Editor 按顺序执行 `007_create_platform_foundation.sql`、`008_business_workflow_functions.sql` 和 `009_order_quote_items.sql`，再执行 `npm run check:supabase`。
-2. 在服务器环境加载密钥后导入 `CHN`、`ARE`、`SGP`，通过 `/api/admin/areas` 抽查级联和边界，再分批导入全球数据。
+1. 生产 Supabase 的 `001` 至 `010` 已通过 26 项只读结构检查；不要重复执行旧迁移。后续 schema 变更新增迁移并先在临时项目验证。
+2. 在服务器环境加载密钥后，先修复并导入 CHN ADM1-ADM3；运行 `npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3`，再按国家覆盖矩阵分批导入全球数据。
 3. 配置并验收 COS 私有交付，完成一次真实的“订单已交付 → 签名下载 → 撤销”演练。
 4. 用 Earth Search/Copernicus 完成开放数据真实目录；演示产品继续明确标注为示例。
 5. 选择一个商业聚合商完成 sandbox adapter，再决定 Planet/Airbus/SAR 直连次序；供应商询价先写入 `provider_quotes`，客户订单明细写入 `order_items` 后才允许下单。
-6. 先上线对公转账核销，然后逐个开通支付宝和国际支付通道；每个通道都必须先通过 webhook、退款和对账验收。
+6. 先上线对公转账人工核销；企业支付宝完成签约、回调和退款测试后再启用自动支付。国际支付通道另行完成 KYC、webhook、退款、拒付和对账验收。
 
 目录 API：`GET /api/catalog/sources` 返回公开图源登记，`GET /api/catalog/products?provider=<id>&category=archive&limit=100` 返回已核验的标准化产品。它们不会返回凭据，也不会把“规划中”供应商或未核验库存展示给客户。
 

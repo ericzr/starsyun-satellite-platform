@@ -7,11 +7,12 @@
 ## 当前基线（已完成）
 
 - 腾讯云新加坡 Node/Nginx 服务已运行，正式域名 HTTPS 可访问。
-- Supabase 新加坡项目已连接，生产迁移 `001` 至 `006` 已执行；`007` 至 `009` 需要在本轮上线前执行并验收。
+- Supabase 新加坡项目已连接；生产环境的 `001` 至 `010` 表、索引和 RPC 已经通过 26 项只读结构检查。不要在未备份的生产库重复执行同名迁移；后续变更必须新增迁移并先在临时项目验证。
 - 客户注册、登录、会话和管理员登录已走服务端网关。
 - `/healthz` 返回 200，`/readyz` 已达到 ready；Stripe 尚未启用属于预期状态。
 - 服务器运行时密钥只放在 `/etc/starsyun/starsyun.env`，没有提交到 Git。
-- GitHub Pages 保留为静态演示；真实业务流量走腾讯云服务器。
+- 腾讯云当前正式 release 为 `40d0352`，`/healthz` 与 `/readyz` 已实测正常；GitHub Pages 仅保留静态演示，真实业务流量走腾讯云服务器。
+- 行政区目录的旧检查器曾把“父级 ID 存在”误判为“层级正确”。现有中国 ADM2/ADM3 数据已确认混入县旗并缺少中文名，全球 ADM3 不能视为已完成；这是交易上线阻塞项。
 
 ## P0：真实交易上线前必须完成
 
@@ -27,7 +28,8 @@
 - [ ] 建立统一产品字段：供应商、产品 ID、采集时间、几何范围、分辨率、云量、传感器、处理级别、授权、币种、价格模式和交付 SLA。
 - [ ] 首批保持开放数据：Earth Search、Copernicus、NASA/USGS；供应商 API 失败时显示降级状态，不伪造库存。
 - [ ] 为每个供应商增加配额、超时、重试、原始响应留存和服务条款记录。
-- [ ] 按顺序执行 `007_create_platform_foundation.sql`、`008_business_workflow_functions.sql`、`009_order_quote_items.sql` 与 `010_create_public_downloads.sql`，导入至少中国、阿联酋、新加坡和首批全球 ADM0-ADM3 行政区。
+- [x] 生产 Supabase 的 `001` 至 `010` 结构已通过只读验收。
+- [ ] 以可追溯的权威来源重建中国 ADM1-ADM3，并用新审计命令验证：`npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3`。随后按国家覆盖矩阵分批导入，不将“已有几何”表述为“全球三级已完成”。
 - [x] 将行政区页面切换到 `/api/admin/areas`，移除生产路径的 CountriesNow/Nominatim 直连。
 
 ### 2. 询价、报价、订单闭环
@@ -42,13 +44,13 @@
 ### 3. 文件交付与存储分层
 
 - [x] 已执行 `supabase/migrations/005_create_delivery_assets.sql` 与 `006_create_delivery_downloads.sql`，建立交付对象和下载审计元数据表。
-- [ ] 腾讯 COS 建立 `preview`、`delivery`、`archive` 三个私有桶或等价前缀。
+- [x] 腾讯 COS 已建立 `preview`、`delivery`、`archive` 三类私有存储位置，交付子账号保持 `GetObject`、`HeadObject`、`PutObject` 最小权限，不授予删除权限。
 - [ ] Supabase 只保存文件元数据、COS Object Key、校验值、授权和下载审计，不保存卫星原始影像。
-- [ ] 管理员交付文件后，客户详情页只显示短时签名下载 URL；Node 不中转大文件。
+- [x] 管理员登记交付对象时已用服务端 `HeadObject` 验证对象存在及实际文件大小；客户下载由短时签名 URL 直连 COS，Node 不中转大文件。
 - [ ] 交付 URL 必须绑定用户、订单、文件版本和过期时间，支持撤销和重新签发。
 - [ ] COS 配置版本控制、生命周期和跨区域备份；预览资源才允许 CDN 缓存。
 
-当前代码已提供交付闭环的服务端接口：管理员可查询订单、登记或撤销交付文件并标记订单为已交付；客户只能在本人订单进入 `delivered` 后读取文件元数据，下载时由服务端签发短时 COS URL，并写入 `delivery_downloads` 审计记录。仍需配置私有 COS Bucket，并用真实对象完成一次下载/撤销验收。
+当前代码已提供交付闭环的服务端接口：管理员可查询订单、登记或撤销交付文件并标记订单为已交付；客户只能在本人订单进入 `delivered` 后读取文件元数据，下载时由服务端签发短时 COS URL，并写入 `delivery_downloads` 审计记录。仍需用真实私有对象完成一次“登记 → 交付 → 下载 → 撤销 → 审计”验收；撤销不会追溯使已经签发且未到期的 URL 立即失效。
 
 ### 4. 安全门禁
 
@@ -75,7 +77,7 @@
 - [ ] 结构化记录 request id、路由、耗时、上游供应商、状态码和错误类别，禁止记录密钥和用户密码。
 - [ ] 监控 `/healthz`、`/readyz`、Nginx 5xx、Node 重启、磁盘使用率、Supabase 错误率和 COS 失败率。
 - [ ] 汇总 Node `http_request` 结构化日志中的 `requestId`、路由、状态码和耗时，禁止记录请求体、Cookie 和任何密钥。
-- [ ] Supabase Pro 每日备份仅保留 7 天；另行执行逻辑备份到加密 COS，并每月恢复演练。
+- [ ] 按当前 Supabase 方案确认实际备份保留期；另行执行逻辑备份到加密 COS，并每月恢复演练。不得假定特定套餐的保留期。
 - [ ] 服务器发布保留最近两个可回滚 release，发布前执行 type-check、lint、build、smoke 和数据库迁移检查。
 
 ### 质量门禁

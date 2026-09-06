@@ -14,6 +14,7 @@
     "check:supabase": "node scripts/check-supabase.mjs",
     "check:geo": "node scripts/check-geo.mjs",
     "check:admin-data": "node scripts/check-admin-data.mjs",
+    "test:admin-data": "node --test scripts/tests/admin-data-validation.test.mjs",
     "import:admin": "node scripts/import-geoboundaries.mjs",
     "start": "node dist-server/server.js",
     "preview": "vite preview",
