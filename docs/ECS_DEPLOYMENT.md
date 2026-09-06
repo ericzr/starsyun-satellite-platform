@@ -120,6 +120,12 @@ sudo tar -xzf starsyun-release.tgz -C "/srv/starsyun/releases/$release_id"
 sudo chown -R starsyun:starsyun "/srv/starsyun/releases/$release_id"
 sudo ln -sfn "/srv/starsyun/releases/$release_id" /srv/starsyun/current
 sudo systemctl restart starsyun
+# A unit can report "started" before Node has bound its port. Wait briefly for
+# the actual readiness endpoint before declaring the release successful.
+for attempt in $(seq 1 10); do
+  curl -fsS http://127.0.0.1:3000/readyz && break
+  sleep 1
+done
 curl -fsS http://127.0.0.1:3000/healthz
 curl -fsS http://127.0.0.1:3000/readyz
 sudo nginx -t && sudo systemctl reload nginx
