@@ -23,4 +23,6 @@
 - Supabase 的 `001` 至 `010` 已通过 26 项只读结构检查。不要把旧迁移再次粘贴到生产 SQL Editor。
 - COS 交付登记会先校验对象存在和实际大小；相关代码已发布，但还没有真实业务对象的端到端验收。
 
+运营人员可在腾讯云服务器使用 `sudo node --env-file=/etc/starsyun/starsyun.env /srv/starsyun/current/scripts/production-inventory.mjs` 查看仅含数量的生产业务基线；命令不会输出客户、订单、支付、对象 Key 或供应商响应内容。
+
 完整技术顺序见 [正式上线主线任务](./PRODUCTION_LAUNCH_PLAN.md) 和 [供应商接入清单](./INTEGRATION_HANDOFF.md)。
