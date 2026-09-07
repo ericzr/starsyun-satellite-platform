@@ -16,7 +16,7 @@ const tables = [
 ];
 async function count(table) {
   const response = await fetch(`${url}/rest/v1/${table}?select=*&limit=0`, { headers, signal: AbortSignal.timeout(20_000) });
-  if (!response.ok) throw new Error(`${table}: HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const match = (response.headers.get('content-range') || '').match(/\/(\d+)$/u);
   if (!match) throw new Error(`${table}: exact count unavailable`);
   return Number(match[1]);
@@ -26,7 +26,11 @@ let failed = false;
 for (const [index, result] of results.entries()) {
   const table = tables[index];
   if (result.status === 'fulfilled') console.log(`${table}: ${result.value[1]}`);
-  else {
+  else if (table === 'orders' && /HTTP (401|403)/u.test(result.reason.message)) {
+    // Commercial order rows are intentionally not countable through the
+    // public REST role; do not weaken RLS merely for an operations report.
+    console.log(`${table}: protected (row count not exposed by REST)`);
+  } else {
     failed = true;
     console.error(`${table}: unavailable (${result.reason.message})`);
   }
