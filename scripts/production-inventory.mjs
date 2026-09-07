@@ -26,7 +26,7 @@ let failed = false;
 for (const [index, result] of results.entries()) {
   const table = tables[index];
   if (result.status === 'fulfilled') console.log(`${table}: ${result.value[1]}`);
-  else if (table === 'orders' && /HTTP (401|403)/u.test(result.reason.message)) {
+  else if (/HTTP (401|403)/u.test(result.reason.message)) {
     // Commercial order rows are intentionally not countable through the
     // public REST role; do not weaken RLS merely for an operations report.
     console.log(`${table}: protected (row count not exposed by REST)`);
