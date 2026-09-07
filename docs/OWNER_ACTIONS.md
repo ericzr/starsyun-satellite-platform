@@ -20,7 +20,7 @@
 
 ## 已完成，不需要重复操作
 
-- 腾讯云已发布正式 release `40d0352`，`https://starsyun.com/healthz` 与 `/readyz` 返回正常。
+- 腾讯云最近一次可核对的正式 release 为 `b51bea0`，`https://starsyun.com/healthz` 与 `/readyz` 返回正常。GitHub `e4a99bb` 尚待网页终端稳定后发布。
 - Supabase 的 `001` 至 `010` 已通过 26 项只读结构检查。不要把旧迁移再次粘贴到生产 SQL Editor；新增 `011_normalize_paypal_provider.sql` 尚未执行，需先备份再单独运行一次。
 - COS 交付登记会先校验对象存在和实际大小；相关代码已发布，但还没有真实业务对象的端到端验收。
 

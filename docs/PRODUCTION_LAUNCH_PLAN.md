@@ -11,7 +11,7 @@
 - 客户注册、登录、会话和管理员登录已走服务端网关。
 - `/healthz` 返回 200，`/readyz` 已达到 ready；Stripe 尚未启用属于预期状态。
 - 服务器运行时密钥只放在 `/etc/starsyun/starsyun.env`，没有提交到 Git。
-- 腾讯云当前正式 release 为 `40d0352`，`/healthz` 与 `/readyz` 已实测正常；GitHub Pages 仅保留静态演示，真实业务流量走腾讯云服务器。
+- 腾讯云最近一次可核对的正式 release 为 `b51bea0`，`/healthz` 与 `/readyz` 已实测正常；GitHub `e4a99bb` 尚待网页终端恢复后发布。GitHub Pages 仅保留静态演示，真实业务流量走腾讯云服务器。
 - 行政区目录的旧检查器曾把“父级 ID 存在”误判为“层级正确”。现有中国 ADM2/ADM3 数据已确认混入县旗并缺少中文名，全球 ADM3 不能视为已完成；这是交易上线阻塞项。
 
 ## P0：真实交易上线前必须完成
