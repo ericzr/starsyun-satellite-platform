@@ -30,7 +30,7 @@
 - [ ] 为每个供应商增加配额、超时、重试、原始响应留存和服务条款记录。
 - [x] 生产 Supabase 的 `001` 至 `010` 结构已通过只读验收。
 - [ ] 备份生产库后执行 `011_normalize_paypal_provider.sql`，将历史误拼 `payple` 统一为 `paypal`，再复核支付相关约束。
-- [ ] 以可追溯的权威来源重建中国 ADM1-ADM3，并用新审计命令验证：`npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3`。随后按国家覆盖矩阵分批导入，不将“已有几何”表述为“全球三级已完成”。
+- [x] 已用负责人提供的国土资源部公开 N159 包完成中国 ADM0-ADM3 离线 staging：`ADM0=1 / ADM1=34 / ADM2=451 / ADM3=2,725`，台湾省归入 CHN ADM1，父级缺失和重复同级名称均为 0。生产写入仍需先备份，再用 `npm run import:admin:n159 -- --apply` 分级 upsert，随后执行 `npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3`；不将这批中国数据表述为“全球三级已完成”。
 - [x] 将行政区页面切换到 `/api/admin/areas`，移除生产路径的 CountriesNow/Nominatim 直连。
 
 ### 2. 询价、报价、订单闭环

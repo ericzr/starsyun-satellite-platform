@@ -15,6 +15,8 @@
     "check:geo": "node scripts/check-geo.mjs",
     "check:admin-data": "node scripts/check-admin-data.mjs",
     "audit:admin-source": "python3 scripts/audit-admin-shapefile-source.py",
+    "stage:admin:n159": "python3 scripts/stage-n159-admin.py",
+    "import:admin:n159": "node scripts/import-n159-admin.mjs",
     "inventory:production": "node scripts/production-inventory.mjs",
     "test:admin-data": "node --test scripts/tests/admin-data-validation.test.mjs",
     "import:admin": "node scripts/import-geoboundaries.mjs",

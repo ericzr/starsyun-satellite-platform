@@ -20,7 +20,7 @@ StarSyun 的正式行政区目录采用 [geoBoundaries gbOpen](https://www.geobo
 - “全球三级”实际只覆盖 79 个 ADM0 代码，不是全球 ADM3 完整覆盖。
 - ADM0 中另有 `TWN`，并存在 `CHN`/`Z02`/`Z03`/`Z08` 多个 China 记录。导入时必须去重，并按 StarSyun 规则将台湾省纳入中国 ADM1。
 - 全球包的中国 ADM2 含有已撤销的“巢湖市”等旧记录，ADM1→ADM2 也有缺失父级的记录。
-- 另附的 2023 中国包包含 34 个省级几何，含“台湾省”和代码 `710000`；可作为中国层级候选，但同样缺少授权与来源证明。
+- 另附的 2023 中国包包含 34 个省级几何，含“台湾省”和代码 `710000`；按业务负责人声明作为国土资源部公开数据使用，并在导入报告中保留 `source=MNR-N159`、版本和来源声明。
 
 复核命令：
 
@@ -32,6 +32,33 @@ npm run audit:admin-source -- \
 ```
 
 来源声明记录后，处理流程为：转换到 staging GeoJSON/GeoPackage → 根据稳定编码建立父子关系 → 台湾省和 China 别名规范化 → 旧区划/重复/空几何审计 → 样本国家人工验收 → 分批导入 Supabase。
+
+### N159 中国包的已完成离线验收
+
+仓库中的 `scripts/stage-n159-admin.py` 只做离线转换，不连接 Supabase；它会读取中国 2023 的国界、省级、地级和县级 ZIP，输出 NDJSON 与报告。脚本会把 pyshp 的几何转换为 WGS84 GeoJSON，校验稳定编码、中文名称、父子层级、bbox 和重复同级名称，并把直辖市/省直管县等没有地级父级的单位提升为 ADM2，避免把县级实体混进三级列表。
+
+本地验收结果（2026-09-07）：ADM0=1、ADM1=34、ADM2=451、ADM3=2,725；父级缺失和重复同级名称均为 0；台湾省为 CHN 下的唯一对应 ADM1，未生成独立 TWN。产物写入被 `.gitignore` 忽略的 `.codex-tmp/`，不会进入 Git。
+
+写库由 `scripts/import-n159-admin.mjs` 单独负责，默认只读校验；只有显式传入 `--apply` 才会调用 Supabase REST，并按 ADM0 → ADM3 顺序写入。它默认不会停用旧记录，`--deactivate-legacy` 是另一个需要明确确认的选项。生产写入后必须运行：
+
+```bash
+npm run import:admin:n159 -- \
+  --input=.codex-tmp/n159-china.ndjson \
+  --report=.codex-tmp/n159-china-report.json
+
+SUPABASE_URL=https://<project>.supabase.co \
+SUPABASE_SECRET_KEY='<server-only-key>' \
+npm run import:admin:n159 -- \
+  --input=.codex-tmp/n159-china.ndjson \
+  --report=.codex-tmp/n159-china-report.json \
+  --apply
+
+SUPABASE_URL=https://<project>.supabase.co \
+SUPABASE_SECRET_KEY='<server-only-key>' \
+npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3
+```
+
+导入前先在 Supabase 备份或临时项目运行同一命令；确认前端级联列表不再读取旧 CHN 行后，再单独评估是否使用 `--deactivate-legacy` 清理旧的活动记录。原始 ZIP 不提交到仓库，生产只保存压缩后的目录几何和来源元数据。
 
 ## 数据模型
 

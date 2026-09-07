@@ -36,3 +36,4 @@ coverage
 .cache
 .codex-tmp
 outputs
+__pycache__/
