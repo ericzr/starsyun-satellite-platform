@@ -22,6 +22,7 @@ for (const migration of [
   '008_business_workflow_functions.sql',
   '009_order_quote_items.sql',
   '010_create_public_downloads.sql',
+  '011_normalize_paypal_provider.sql',
 ]) {
   requireFile(`supabase/migrations/${migration}`);
 }

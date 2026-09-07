@@ -7,7 +7,7 @@
 ## 当前基线（已完成）
 
 - 腾讯云新加坡 Node/Nginx 服务已运行，正式域名 HTTPS 可访问。
-- Supabase 新加坡项目已连接；生产环境的 `001` 至 `010` 表、索引和 RPC 已经通过 26 项只读结构检查。不要在未备份的生产库重复执行同名迁移；后续变更必须新增迁移并先在临时项目验证。
+- Supabase 新加坡项目已连接；生产环境的 `001` 至 `010` 表、索引和 RPC 已经通过 26 项只读结构检查。不要在未备份的生产库重复执行同名迁移；新增的 `011_normalize_paypal_provider.sql` 尚未应用到生产，需备份后单独执行一次并验证。
 - 客户注册、登录、会话和管理员登录已走服务端网关。
 - `/healthz` 返回 200，`/readyz` 已达到 ready；Stripe 尚未启用属于预期状态。
 - 服务器运行时密钥只放在 `/etc/starsyun/starsyun.env`，没有提交到 Git。
@@ -29,6 +29,7 @@
 - [ ] 首批保持开放数据：Earth Search、Copernicus、NASA/USGS；供应商 API 失败时显示降级状态，不伪造库存。
 - [ ] 为每个供应商增加配额、超时、重试、原始响应留存和服务条款记录。
 - [x] 生产 Supabase 的 `001` 至 `010` 结构已通过只读验收。
+- [ ] 备份生产库后执行 `011_normalize_paypal_provider.sql`，将历史误拼 `payple` 统一为 `paypal`，再复核支付相关约束。
 - [ ] 以可追溯的权威来源重建中国 ADM1-ADM3，并用新审计命令验证：`npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3`。随后按国家覆盖矩阵分批导入，不将“已有几何”表述为“全球三级已完成”。
 - [x] 将行政区页面切换到 `/api/admin/areas`，移除生产路径的 CountriesNow/Nominatim 直连。
 
@@ -38,7 +39,7 @@
 - [ ] 接受报价必须冻结金额、币种、税费、交付天数和条款版本；任务拍摄订单在供应商下单前调用 `/api/wallet/holds` 或核验对公预付款。
 - [x] 订单状态严格经过 `pending_payment → paid → fulfillment → delivered`，取消和失败状态可审计（`transition_order` RPC + `order_events`）。
 - [ ] 所有写操作增加 request id、幂等键和操作者记录，避免重复报价、重复订单和重复支付。
-- [ ] 先采用“报价后人工确认/对公转账”也可以上线；Stripe 仅在 webhook、退款和对账验收后开放。
+- [ ] 先采用“报价后人工确认/对公转账”也可以上线；企业支付宝已开通电脑网站支付，但 StarSyun 必须使用独立 AppID、密钥和回调，仅在 webhook、退款和对账验收后开放。
 - [ ] 历史存档和任务拍摄使用不同的业务类型与供应商订单状态；不能用演示产品直接生成成交库存。
 
 ### 3. 文件交付与存储分层

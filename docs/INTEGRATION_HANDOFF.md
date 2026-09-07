@@ -55,8 +55,8 @@ type ProviderAdapter = {
 | 业务项 | 首期路径 | 需要你开通/提供 | 代码启用条件 |
 | --- | --- | --- | --- |
 | 客户与供应商身份 | Supabase Auth + 后端角色模型 | 管理员、采购商、供应商的角色规则；邮件模板与回调域名 | 角色表和 RLS 审核后 |
-| 国内支付 | 对公转账人工核销起步，再接支付宝 | 企业支付宝签约资料、异步通知地址、退款权限 | webhook 验签、幂等、对账、退款测试 |
-| 国际支付 | 选择可服务目标市场的卡支付渠道，再接 PayPal | 商户主体、KYC、webhook secret、支持币种/国家 | 成功、失败、退款、拒付和对账测试 |
+| 国内支付 | 对公转账人工核销 + 企业支付宝 | “电脑网站支付”已开通；需单独创建 StarSyun AppID、密钥和回调 | webhook 验签、幂等、对账、退款测试；不改动其他业务应用 |
+| 国际支付 | PayPal Business 在海外自助付款上线前接入，大额 B2B 优先电汇 | 商户主体、KYC、独立 REST App、webhook ID、支持币种/国家 | 成功、失败、退款、拒付和对账测试 |
 | 任务储值/预付款 | 多币种钱包冻结 | 财务确认储值、退款、税务与资金监管规则 | `wallet_transactions` 只追加账本、支付回调驱动入账 |
 | 历史数据支付 | 冻结报价后支付 | 商品授权、价税规则、样片规则 | 付款成功后才签发交付 |
 | 文件交付 | 腾讯 COS 私有桶 | Bucket、地域、最小权限子账号、生命周期规则 | COS 真实签名链接、撤销和下载审计验收 |
@@ -65,12 +65,12 @@ type ProviderAdapter = {
 
 ## 生产执行顺序
 
-1. 生产 Supabase 的 `001` 至 `010` 已通过 26 项只读结构检查；不要重复执行旧迁移。后续 schema 变更新增迁移并先在临时项目验证。
+1. 生产 Supabase 的 `001` 至 `010` 已通过 26 项只读结构检查；不要重复执行旧迁移。备份后单独执行新增的 `011_normalize_paypal_provider.sql`，再检查支付枚举约束。
 2. 在服务器环境加载密钥后，先修复并导入 CHN ADM1-ADM3；运行 `npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3`，再按国家覆盖矩阵分批导入全球数据。
 3. 配置并验收 COS 私有交付，完成一次真实的“订单已交付 → 签名下载 → 撤销”演练。
 4. 用 Earth Search/Copernicus 完成开放数据真实目录；演示产品继续明确标注为示例。
 5. 选择一个商业聚合商完成 sandbox adapter，再决定 Planet/Airbus/SAR 直连次序；供应商询价先写入 `provider_quotes`，客户订单明细写入 `order_items` 后才允许下单。
-6. 先上线对公转账人工核销；企业支付宝完成签约、回调和退款测试后再启用自动支付。国际支付通道另行完成 KYC、webhook、退款、拒付和对账验收。
+6. 保留对公转账人工核销；企业支付宝的签约可复用，但 StarSyun 使用独立 AppID、订单号前缀和回调，完成验签、退款和对账测试后才启用。PayPal 作为海外自助支付 P2 项。详见 [支付接入与业务隔离](./PAYMENT_INTEGRATION.md)。
 
 目录 API：`GET /api/catalog/sources` 返回公开图源登记，`GET /api/catalog/products?provider=<id>&category=archive&limit=100` 返回已核验的标准化产品。它们不会返回凭据，也不会把“规划中”供应商或未核验库存展示给客户。
 

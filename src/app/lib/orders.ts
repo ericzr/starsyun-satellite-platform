@@ -30,7 +30,7 @@ export interface ServerOrder {
   deliveryDays: number;
   status: ServerOrderStatus;
   paymentStatus: PaymentStatus;
-  paymentProvider?: 'stripe' | 'alipay' | 'paypal' | 'payple' | 'bank-transfer' | 'wallet';
+  paymentProvider?: 'stripe' | 'alipay' | 'paypal' | 'bank-transfer' | 'wallet';
   paymentIntentId?: string;
   paymentClientSecret?: string;
   paymentCreatedAt?: string;

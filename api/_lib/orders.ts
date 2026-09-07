@@ -5,7 +5,7 @@ import { supabaseApiHeaders } from './supabase';
 
 export type OrderStatus = 'pending_payment' | 'paid' | 'fulfillment' | 'delivered' | 'cancelled';
 export type PaymentStatus = 'unpaid' | 'processing' | 'paid' | 'refunded' | 'failed';
-export type PaymentProvider = 'stripe' | 'alipay' | 'paypal' | 'payple' | 'bank-transfer' | 'wallet';
+export type PaymentProvider = 'stripe' | 'alipay' | 'paypal' | 'bank-transfer' | 'wallet';
 
 export interface OrderItemRecord {
   id: string;

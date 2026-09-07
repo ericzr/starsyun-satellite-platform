@@ -34,3 +34,5 @@ coverage
 # Misc
 *.tsbuildinfo
 .cache
+.codex-tmp
+outputs
