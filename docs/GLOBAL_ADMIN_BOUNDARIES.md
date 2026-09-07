@@ -4,7 +4,7 @@ StarSyun 的正式行政区目录采用 [geoBoundaries gbOpen](https://www.geobo
 
 ## 用户提供的 N159 SHP 包
 
-2026-09-07 已对本地 N159 包进行只读审计。它可以减少几何数据的手工建设，但不能原样导入生产：
+2026-09-07 已对本地 N159 包进行只读审计。按业务负责人确认，该包为国土资源部提供的公开数据，不以供应商授权作为阻塞；导入批次仍需保留来源、版本和公开数据声明。它可以减少几何数据的手工建设，但不能原样导入生产：
 
 | 层级 | 记录数 | 具有该层级的国家/地区代码数 |
 | --- | ---: | ---: |
@@ -15,7 +15,7 @@ StarSyun 的正式行政区目录采用 [geoBoundaries gbOpen](https://www.geobo
 
 审计识别出以下阻塞项：
 
-- 包内没有找到许可、数据来源 URL、卖方授权或允许商业再分发/对客服务的文件。
+- 包内没有找到许可、数据来源 URL、卖方授权或允许商业再分发/对客服务的文件；已改为依据负责人公开数据声明记录，后续需补齐来源 URL 与版本证据。
 - 字段和 `GID_*` 编码形式与旧版 GADM 导出高度一致。如果原始来源确为 GADM，必须先取得商业使用许可。
 - “全球三级”实际只覆盖 79 个 ADM0 代码，不是全球 ADM3 完整覆盖。
 - ADM0 中另有 `TWN`，并存在 `CHN`/`Z02`/`Z03`/`Z08` 多个 China 记录。导入时必须去重，并按 StarSyun 规则将台湾省纳入中国 ADM1。
@@ -27,10 +27,11 @@ StarSyun 的正式行政区目录采用 [geoBoundaries gbOpen](https://www.geobo
 ```bash
 npm run audit:admin-source -- \
   "/path/to/N159全球各国省级多级行政区划shp数据世界国家边界矢量中国省市县gis" \
+  --owner-attested-public \
   --json=/tmp/starsyun-admin-source-audit.json
 ```
 
-授权确认后，处理流程为：转换到 staging GeoJSON/GeoPackage → 根据稳定编码建立父子关系 → 台湾省和 China 别名规范化 → 旧区划/重复/空几何审计 → 样本国家人工验收 → 分批导入 Supabase。
+来源声明记录后，处理流程为：转换到 staging GeoJSON/GeoPackage → 根据稳定编码建立父子关系 → 台湾省和 China 别名规范化 → 旧区划/重复/空几何审计 → 样本国家人工验收 → 分批导入 Supabase。
 
 ## 数据模型
 

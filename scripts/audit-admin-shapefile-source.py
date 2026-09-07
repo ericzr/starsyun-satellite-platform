@@ -32,6 +32,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("source", type=Path, help="Root directory that contains the supplied ZIP files")
     parser.add_argument("--json", type=Path, help="Optional path for the complete JSON report")
     parser.add_argument("--strict", action="store_true", help="Exit non-zero when production blockers are found")
+    parser.add_argument(
+        "--owner-attested-public",
+        action="store_true",
+        help="Record the owner's assertion that the bundle is public data; does not bypass geometry or coverage blockers",
+    )
     return parser.parse_args()
 
 
@@ -260,7 +265,13 @@ def main() -> int:
         layers = global_layer_names(archive)
         global_report, blockers = audit_global(archive, layers)
     licenses = license_evidence(source)
-    if not licenses:
+    source_attestation = {
+        "kind": "owner_attested_public" if args.owner_attested_public else "not_provided",
+        "note": "Owner states this is public data from China's Ministry of Natural Resources; retain provenance/version evidence before import."
+        if args.owner_attested_public
+        else None,
+    }
+    if not licenses and not args.owner_attested_public:
         blockers.insert(0, "no licence, source URL, seller authorization or redistribution grant was found in the supplied bundle")
 
     report = {
@@ -269,6 +280,7 @@ def main() -> int:
         "global": global_report,
         "china_2023_archives": audit_china_archives(source),
         "license_evidence": licenses,
+        "source_attestation": source_attestation,
         "production_blockers": blockers,
         "production_decision": "STAGING_ONLY" if blockers else "ELIGIBLE_FOR_IMPORT_REVIEW",
     }
@@ -280,6 +292,7 @@ def main() -> int:
         print(f"ADM{level}: {item['dbf_records']:,} rows; {item['country_code_coverage']} country codes; {item['orphan_count']} orphans")
     print(f"China 2023 archives: {', '.join(sorted(report['china_2023_archives'])) or 'none'}")
     print(f"Licence evidence files: {len(licenses)}")
+    print(f"Owner public-data attestation: {'yes' if args.owner_attested_public else 'no'}")
     print(f"Decision: {report['production_decision']}")
     for blocker in blockers:
         print(f"BLOCKER: {blocker}")
