@@ -11,6 +11,7 @@
     "build:check": "tsc --noEmit && vite build",
     "smoke:server": "node scripts/smoke-server.mjs",
     "check:release": "node scripts/check-release.mjs",
+    "test:release": "node --test scripts/tests/check-release.test.mjs",
     "check:supabase": "node scripts/check-supabase.mjs",
     "check:geo": "node scripts/check-geo.mjs",
     "check:admin-data": "node scripts/check-admin-data.mjs",

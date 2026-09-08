@@ -31,6 +31,9 @@ jobs:
       - name: Type-check
         run: npm run type-check
 
+      - name: Test release safety checks
+        run: npm run test:release
+
       - name: Build production frontend and server
         run: npm run build:production
         env:

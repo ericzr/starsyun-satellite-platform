@@ -63,6 +63,8 @@ tar -czf starsyun-release.tgz dist dist-server package.json scripts supabase/mig
 
 发布前可运行 npm run check:release 检查迁移文件和构建产物；在服务器准备好运行时文件后，再用 npm run check:release -- --runtime-env=/etc/starsyun/starsyun.env 检查必需配置、生产 CORS 和 COS 变量（不会打印密钥）。
 
+`check:release` 面向腾讯云/自有服务器，不接受 GitHub Pages 演示产物：它检查当前构建环境的 mock 开关覆盖、`dist/index.html` 的根路径资源引用及文件是否存在。`npm run test:release` 覆盖这些门禁，并在 release CI 中执行。此检查无法追溯一个既有 bundle 当时使用的全部环境变量，因此构建与检查须在同一受控环境完成，不能仅凭事后 preflight 通过推断历史产物未启用 mock。
+
 服务器运行时可执行 `npm run check:supabase`，它只验证 `001` 至 `010` 对应的业务表、受保护 RPC 与 `orders` 的支付字段是否可通过 Supabase REST 访问，不会读取或输出业务数据。生产当前 26 项结构检查已通过；新增 `011` 是支付渠道枚举规范化，不在这 26 项 REST 检查内，需在备份后单独执行并检查约束。该检查不替代数据内容、RLS 策略和恢复演练验收。
 
 构建产物中：
@@ -85,6 +87,8 @@ tar -czf starsyun-release.tgz dist dist-server package.json scripts supabase/mig
 ```
 
 不使用 root 运行应用。初次准备：
+
+注意：归档部署的 release 目录没有 `.git`，不能在 `/srv/starsyun/current` 执行 `git pull` 或 `git fetch`。应从已核验的完整提交 SHA 获取归档/CI 产物，在独立目录准备并验收；`current` 只负责指向经验证的版本。
 
 ```bash
 sudo useradd --system --home /srv/starsyun --shell /usr/sbin/nologin starsyun

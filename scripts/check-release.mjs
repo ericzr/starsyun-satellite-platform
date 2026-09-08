@@ -38,10 +38,61 @@ for (const artifact of [
 function parseEnv(path) {
   const values = new Map();
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/u)) {
-    const match = line.match(/^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/u);
-    if (match) values.set(match[1], match[2].replace(/^['"]|['"]$/gu, ''));
+    const match = line.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/u);
+    if (match) {
+      const raw = match[2];
+      const quoted = raw.match(/^(['"])(.*?)\1/u);
+      values.set(match[1], quoted ? quoted[2] : raw.split('#')[0].trim());
+    }
   }
   return values;
+}
+
+// This command validates self-hosted releases, not the GitHub Pages demo.
+// Vite gives process variables priority over dotenv files; inspecting only
+// .env.production misses shell and .env.production.local overrides.
+const buildValues = new Map();
+for (const name of ['.env', '.env.local', '.env.production', '.env.production.local']) {
+  const path = resolve(root, name);
+  if (existsSync(path)) {
+    for (const [key, value] of parseEnv(path)) buildValues.set(key, value);
+  }
+}
+if (process.env.VITE_ENABLE_MOCK_DATA !== undefined) {
+  buildValues.set('VITE_ENABLE_MOCK_DATA', process.env.VITE_ENABLE_MOCK_DATA);
+}
+const mockValue = (buildValues.get('VITE_ENABLE_MOCK_DATA') || '').trim();
+if (/^true(?:\s*#.*)?$/iu.test(mockValue) || mockValue.includes('$')) {
+  errors.push('effective build configuration enables mock data or has an unresolved mock-data value');
+}
+if (process.env.STARSYUN_DEPLOY_TARGET === 'github-pages') {
+  errors.push('GitHub Pages build target is not allowed for a self-hosted release');
+}
+
+// Check the artifact too: a Pages build must fail even when the variable used
+// to build it is no longer present in the preflight process.
+const indexPath = resolve(root, 'dist/index.html');
+if (existsSync(indexPath)) {
+  const html = readFileSync(indexPath, 'utf8');
+  const assets = [];
+  for (const match of html.matchAll(/<(script|link)\b[^>]*>/giu)) {
+    const tag = match[0];
+    const attribute = (name) => tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'iu'))?.[1];
+    if (match[1].toLowerCase() === 'script' && attribute('type') === 'module') {
+      assets.push(attribute('src') || '');
+    } else if (match[1].toLowerCase() === 'link' && ['stylesheet', 'modulepreload'].includes(attribute('rel'))) {
+      assets.push(attribute('href') || '');
+    }
+  }
+  if (/<base\b/iu.test(html)) errors.push('dist/index.html must not override the self-hosted base URL');
+  if (!assets.some((asset) => /\.js(?:[?#]|$)/u.test(asset))) errors.push('dist/index.html is missing a module entry');
+  for (const asset of assets) {
+    if (!/^\/assets\/[A-Za-z0-9_.-]+(?:[?#].*)?$/u.test(asset)) {
+      errors.push('dist/index.html contains a non-root build asset URL');
+    } else {
+      requireFile(`dist${asset.split(/[?#]/u)[0]}`);
+    }
+  }
 }
 
 if (runtimePath) {
