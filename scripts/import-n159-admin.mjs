@@ -159,14 +159,27 @@ async function writeBatch(url, key, batch) {
 }
 
 async function listExistingChinaIds(url, key) {
-  const response = await fetch(`${url}/rest/v1/admin_areas?select=id&country_iso3=eq.CHN&is_active=eq.true&limit=50000`, {
-    headers: headers(key, { Accept: 'application/json' }),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok) throw new Error(`Supabase existing-row query failed (${response.status}): ${await response.text()}`);
-  const rows = await response.json();
-  if (!Array.isArray(rows)) throw new Error('Supabase existing-row query returned a non-list response');
-  return rows.map((row) => row.id).filter((id) => typeof id === 'string');
+  // Supabase REST applies the project's max_rows cap (usually 1,000) even
+  // when a larger limit is requested. Paginate explicitly so legacy cleanup
+  // cannot silently leave a partial active set behind.
+  const ids = [];
+  const seen = new Set();
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await fetch(`${url}/rest/v1/admin_areas?select=id&country_iso3=eq.CHN&is_active=eq.true&order=id.asc&limit=${pageSize}&offset=${offset}`, {
+      headers: headers(key, { Accept: 'application/json' }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) throw new Error(`Supabase existing-row query failed (${response.status}): ${await response.text()}`);
+    const rows = await response.json();
+    if (!Array.isArray(rows)) throw new Error('Supabase existing-row query returned a non-list response');
+    for (const row of rows) {
+      if (typeof row.id !== 'string' || seen.has(row.id)) continue;
+      seen.add(row.id);
+      ids.push(row.id);
+    }
+    if (rows.length < pageSize) return ids;
+  }
 }
 
 async function deactivateBatch(url, key, ids) {
