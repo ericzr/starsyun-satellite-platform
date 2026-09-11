@@ -139,7 +139,8 @@ def audit_global(archive: ZipFile, layers: dict[int, dict[str, str]]) -> tuple[d
     blockers = []
     ids_by_level: dict[int, set[str]] = {}
     china_adm0 = []
-    taiwan_adm1 = []
+    taiwan_counts = Counter()
+    taiwan_examples: dict[int, list[dict[str, str]]] = {1: [], 2: [], 3: []}
     known_stale = []
 
     for level in range(4):
@@ -169,8 +170,14 @@ def audit_global(archive: ZipFile, layers: dict[int, dict[str, str]]) -> tuple[d
                 local_name_missing += 1
             if level == 0 and (row.get("COUNTRY") in {"China", "Taiwan"} or country_code in {"CHN", "TWN", "Z02", "Z03", "Z08"}):
                 china_adm0.append(row)
-            if level == 1 and country_code == "TWN":
-                taiwan_adm1.append(row)
+            if country_code == "TWN" and level > 0:
+                taiwan_counts[level] += 1
+                if len(taiwan_examples[level]) < 5:
+                    taiwan_examples[level].append({
+                        key: row.get(key, "")
+                        for key in (id_field, parent_field, f"NAME_{level}", f"NL_NAME_{level}")
+                        if key
+                    })
             if level == 2 and country_code == "CHN" and row.get("NAME_2") in {"Chaohu", "Laicheng"}:
                 known_stale.append({key: row.get(key) for key in ("GID_1", "GID_2", "NAME_2", "NL_NAME_2")})
         ids_by_level[level] = ids
@@ -189,7 +196,10 @@ def audit_global(archive: ZipFile, layers: dict[int, dict[str, str]]) -> tuple[d
     report["china_policy"] = {
         "global_adm0_china_family": china_adm0,
         "standalone_taiwan_adm0": any(row.get("GID_0") == "TWN" for row in china_adm0),
-        "taiwan_adm1_rows_under_twn": len(taiwan_adm1),
+        "taiwan_adm1_rows_under_twn": taiwan_counts[1],
+        "taiwan_rows_by_level": {f"ADM{level}": taiwan_counts[level] for level in (1, 2, 3)},
+        "taiwan_examples": {f"ADM{level}": taiwan_examples[level] for level in (1, 2, 3)},
+        "taiwan_mapping": "TWN source rows must be normalized under CHN -> 台湾省; do not expose standalone TWN ADM0",
         "known_stale_china_adm2_examples": known_stale,
     }
     report["source_fingerprint"] = {
@@ -202,6 +212,8 @@ def audit_global(archive: ZipFile, layers: dict[int, dict[str, str]]) -> tuple[d
         blockers.append("ADM3 is not global: only a subset of ADM0 country codes has third-level records")
     if report["china_policy"]["standalone_taiwan_adm0"]:
         blockers.append("the global layer exposes Taiwan as standalone ADM0 and must be normalized under CHN")
+    if taiwan_counts[1] and not taiwan_counts[3]:
+        blockers.append("Taiwan has ADM1/ADM2 source rows but no ADM3 rows; keep the third-level selector unavailable until a licensed ADM3 source is added")
     if len(china_adm0) > 1:
         blockers.append("the global layer contains multiple China ADM0 aliases (CHN/Z02/Z03/Z08)")
     if known_stale:
@@ -290,6 +302,11 @@ def main() -> int:
     for level in range(4):
         item = report["global"]["levels"][f"ADM{level}"]
         print(f"ADM{level}: {item['dbf_records']:,} rows; {item['country_code_coverage']} country codes; {item['orphan_count']} orphans")
+    taiwan_levels = report["global"]["china_policy"]["taiwan_rows_by_level"]
+    print(
+        "Taiwan source rows: "
+        + ", ".join(f"{level}={taiwan_levels[level]}" for level in ("ADM1", "ADM2", "ADM3"))
+    )
     print(f"China 2023 archives: {', '.join(sorted(report['china_2023_archives'])) or 'none'}")
     print(f"Licence evidence files: {len(licenses)}")
     print(f"Owner public-data attestation: {'yes' if args.owner_attested_public else 'no'}")

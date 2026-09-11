@@ -578,7 +578,7 @@ export function Explore() {
                 {globalCities.map((city) => <option key={city.id} value={city.id}>{cityLabel(city)}</option>)}
               </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
             </label>}
-            {adminCountry && adminLevel1 && adminLevel2 && <label className="block space-y-1">
+            {adminCountry && adminLevel1 && adminLevel2 && (adminLoading || globalDistricts.length > 0) && <label className="block space-y-1">
               <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel3}</span><button type="button" aria-label={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'} title={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel3(); }}><X className="size-3" /></button></span>
               <div className="relative"><select
                 value={adminLevel3}
@@ -591,7 +591,7 @@ export function Explore() {
                 }}
                 className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <option value="">{globalDistricts.length ? t.explore.adminLevel3Placeholder : (lang === 'zh' ? '暂无三级行政区数据' : 'No third-level areas')}</option>
+                <option value="">{adminLoading ? (lang === 'zh' ? '加载三级行政区中…' : 'Loading third-level areas…') : t.explore.adminLevel3Placeholder}</option>
                 {globalDistricts.map((district) => <option key={district.id} value={district.id}>{cityLabel(district)}</option>)}
               </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
             </label>}
