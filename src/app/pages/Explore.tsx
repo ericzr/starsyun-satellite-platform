@@ -19,13 +19,8 @@ import { fetchCatalogProducts } from '../services/catalog';
 import { fetchGlobalCities, fetchGlobalCountries, fetchGlobalDistricts, fetchGlobalStates, getGlobalAdminArea, searchGlobalAdminAreas, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
 import { toast } from 'sonner';
 
-function countryLabel(country: GlobalCountry, lang: string) {
-  if (lang !== 'zh') return country.name;
-  try {
-    return new Intl.DisplayNames(['zh-CN'], { type: 'region' }).of(country.iso2) ?? country.name;
-  } catch {
-    return country.name;
-  }
+function countryLabel(country: GlobalCountry) {
+  return country.name;
 }
 
 function stateLabel(state: GlobalState) {
@@ -134,7 +129,10 @@ export function Explore() {
   const [params] = useSearchParams();
   const queryParam = params.get('q');
   const categoryParam = params.get('category');
-  const adminLang = lang === 'zh' ? 'zh' : 'en';
+  // Administrative options use the canonical English names in every UI
+  // language. This prevents a Chinese selector from mixing translated and
+  // source-language labels while the surrounding controls remain localized.
+  const adminLang = 'en' as const;
 
   const [search, setSearch] = useState('');
   const [selectionMode, setSelectionMode] = useState<'admin' | 'vector'>('admin');
@@ -539,7 +537,7 @@ export function Explore() {
                   className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
                 >
                   <option value="">{t.explore.countryPlaceholder}</option>
-                  {globalCountries.map((country) => <option key={country.id} value={country.id}>{countryLabel(country, lang)}</option>)}
+                  {globalCountries.map((country) => <option key={country.id} value={country.id}>{countryLabel(country)}</option>)}
                 </select>
                 <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
               </div>

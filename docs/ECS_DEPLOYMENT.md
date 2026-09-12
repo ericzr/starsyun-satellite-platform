@@ -58,7 +58,7 @@ StarSyun Node service (127.0.0.1:3000)
 ```bash
 npm ci
 npm run build:production
-tar -czf starsyun-release.tgz dist dist-server package.json scripts supabase/migrations deploy/systemd deploy/nginx
+tar -czf starsyun-release.tgz dist dist-server package.json scripts data/admin supabase/migrations deploy/systemd deploy/nginx
 ```
 
 发布前可运行 npm run check:release 检查迁移文件和构建产物；在服务器准备好运行时文件后，再用 npm run check:release -- --runtime-env=/etc/starsyun/starsyun.env 检查必需配置、生产 CORS 和 COS 变量（不会打印密钥）。
@@ -71,6 +71,13 @@ tar -czf starsyun-release.tgz dist dist-server package.json scripts supabase/mig
 
 - `dist/`：前端静态产物。
 - `dist-server/server.js`：已打包的 Node API/静态服务，运行时无需 `node_modules`。
+
+行政区补丁：`data/admin/taiwan-adm2.ndjson` 是经审核的 22 条台湾二级行政区记录，必须在切换应用版本后、验收前执行：
+
+```bash
+npm run import:admin:patch -- --input=data/admin/taiwan-adm2.ndjson --apply
+npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3
+```
 
 ## 服务器目录
 

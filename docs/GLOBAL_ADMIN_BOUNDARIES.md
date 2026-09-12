@@ -40,6 +40,8 @@ npm run audit:admin-source -- \
 
 本地验收结果（2026-09-07）：ADM0=1、ADM1=34、ADM2=451、ADM3=2,725；父级缺失和重复同级名称均为 0；台湾省为 CHN 下的唯一对应 ADM1，未生成独立 TWN。产物写入被 `.gitignore` 忽略的 `.codex-tmp/`，不会进入 Git。
 
+台湾二级补丁：N159 全球二级图层中的 22 条台湾县市记录使用 `scripts/stage-taiwan-adm2.py` 提取，并统一挂到 `MNR-N159-CHN-ADM1-710000`。经审核的 NDJSON 固化在 `data/admin/taiwan-adm2.ndjson`，发布后在服务器运行 `npm run import:admin:patch -- --input=data/admin/taiwan-adm2.ndjson --apply`；该补丁只 upsert 22 条记录，不会创建 `TWN` 国家或停用其他行政区。
+
 写库由 `scripts/import-n159-admin.mjs` 单独负责，默认只读校验；只有显式传入 `--apply` 才会调用 Supabase REST，并按 ADM0 → ADM3 顺序写入。它默认不会停用旧记录，`--deactivate-legacy` 是另一个需要明确确认的选项。生产写入后必须运行：
 
 ```bash
