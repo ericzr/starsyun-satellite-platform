@@ -75,25 +75,6 @@ function isChinese(value: string | undefined) {
   return Boolean(value && /[\u3400-\u9fff]/u.test(value));
 }
 
-function untranslatedName(area: AdminArea, lang: Lang) {
-  if (lang === 'en') return area.nameEn;
-  const labels: Record<Exclude<Lang, 'en'>, string> = {
-    zh: '暂无中文译名',
-    ar: 'لا يوجد اسم مترجم',
-    es: 'Sin nombre traducido',
-    fr: 'Nom non traduit',
-    pt: 'Nome não traduzido',
-    ru: 'Нет перевода',
-    ja: '翻訳名なし',
-    ko: '번역명 없음',
-    de: 'Kein übersetzter Name',
-  };
-  // Do not append the English source name here. A missing translation must be
-  // visibly marked in the active locale rather than silently falling back to
-  // English (which made the Chinese selector appear bilingual).
-  return labels[lang];
-}
-
 export function resolveCountryIso2(area: Pick<AdminArea, 'countryIso2' | 'countryIso3'>): string | undefined {
   const explicit = area.countryIso2?.trim().toUpperCase();
   if (explicit && /^[A-Z]{2}$/u.test(explicit)) return explicit;
@@ -116,28 +97,27 @@ function intlCountryName(area: AdminArea, lang: Lang) {
  * Resolve one canonical display name for the current UI language.
  * `local` is source-language metadata, not a translation: using it for every
  * locale is what previously caused mixed Chinese/English (and other source
- * language) labels in the selector. When a translation is unavailable, mark
- * the original source name explicitly instead of presenting English as a
- * translated label.
+ * language) labels in the selector. When a translation is unavailable, the
+ * area is omitted from locale-specific lists instead of presenting a
+ * placeholder or an English source name.
  */
-export function localizedName(area: AdminArea, lang: Lang): string {
+export function localizedName(area: AdminArea, lang: Lang): string | undefined {
   if (lang === 'zh') {
     return area.nameLocal['zh-Hans']
       || area.nameLocal.zh
       || area.nameLocal['name:zh']
       || (isChinese(area.nameLocal.local) ? area.nameLocal.local : undefined)
-      || intlCountryName(area, lang)
-      || untranslatedName(area, lang);
+      || intlCountryName(area, lang);
   }
-  if (lang === 'en') return area.nameLocal.en || area.nameLocal['name:en'] || intlCountryName(area, lang) || area.nameEn;
+  if (lang === 'en') return area.nameLocal.en || area.nameLocal['name:en'] || intlCountryName(area, lang) || area.nameEn || undefined;
   for (const key of LANGUAGE_NAME_KEYS[lang]) {
     const value = area.nameLocal[key];
     if (value) return value;
   }
   // `local` is the source dataset's language and is not guaranteed to match
-  // the active UI language. Returning it here reintroduces mixed-language
-  // options, so unresolved names stay as a localized placeholder.
-  return intlCountryName(area, lang) || untranslatedName(area, lang);
+  // the active UI language. Never return it (or an English source name) as a
+  // translation. Unresolved areas are filtered out by the list functions.
+  return intlCountryName(area, lang);
 }
 
 function feature(geometry?: GeoJSON.Geometry) {
@@ -146,11 +126,13 @@ function feature(geometry?: GeoJSON.Geometry) {
     : undefined;
 }
 
-function cityFromArea(area: AdminArea, lang: Lang): GlobalCity {
+function cityFromArea(area: AdminArea, lang: Lang): GlobalCity | null {
+  const name = localizedName(area, lang);
+  if (!name) return null;
   const [lon, lat] = area.centroid ?? [NaN, NaN];
   return {
     id: area.id,
-    name: localizedName(area, lang),
+    name,
     displayName: area.nameEn,
     lat,
     lon,
@@ -183,13 +165,17 @@ export async function fetchGlobalCountries(lang: Lang = 'en'): Promise<GlobalCou
     // Disabled storage should not stop the directory request.
   }
   const areas = await list({ level: 0, limit: 500 });
-  const countries = areas.map((area) => ({
-    id: area.id,
-    name: localizedName(area, lang),
-    iso2: resolveCountryIso2(area) ?? '',
-    iso3: area.countryIso3,
-    states: [],
-  })).filter((country) => country.iso3 && country.iso3 !== 'TWN' && country.iso2 !== 'TW');
+  const countries = areas.flatMap((area) => {
+    const name = localizedName(area, lang);
+    if (!name) return [];
+    return [{
+      id: area.id,
+      name,
+      iso2: resolveCountryIso2(area) ?? '',
+      iso3: area.countryIso3,
+      states: [],
+    }];
+  }).filter((country) => country.iso3 && country.iso3 !== 'TWN' && country.iso2 !== 'TW');
   try {
     sessionStorage.setItem(`${COUNTRY_CACHE_KEY}:${lang}`, JSON.stringify(countries));
   } catch {
@@ -200,17 +186,26 @@ export async function fetchGlobalCountries(lang: Lang = 'en'): Promise<GlobalCou
 
 export async function fetchGlobalStates(countryIso3: string, lang: Lang = 'en'): Promise<GlobalState[]> {
   const areas = await list({ country: countryIso3, level: 1, limit: 5000 });
-  return areas.map((area) => ({ id: area.id, name: localizedName(area, lang) }));
+  return areas.flatMap((area) => {
+    const name = localizedName(area, lang);
+    return name ? [{ id: area.id, name }] : [];
+  });
 }
 
 export async function fetchGlobalCities(parentId: string, lang: Lang = 'en'): Promise<GlobalCity[]> {
   const areas = await list({ parent: parentId, level: 2, limit: 5000 });
-  return areas.map((area) => cityFromArea(area, lang));
+  return areas.flatMap((area) => {
+    const city = cityFromArea(area, lang);
+    return city ? [city] : [];
+  });
 }
 
 export async function fetchGlobalDistricts(parentId: string, lang: Lang = 'en'): Promise<GlobalCity[]> {
   const areas = await list({ parent: parentId, level: 3, limit: 5000 });
-  return areas.map((area) => cityFromArea(area, lang));
+  return areas.flatMap((area) => {
+    const district = cityFromArea(area, lang);
+    return district ? [district] : [];
+  });
 }
 
 /** Search the server-side ADM0-ADM3 directory without exposing database credentials. */
@@ -218,7 +213,10 @@ export async function searchGlobalAdminAreas(query: string, lang: Lang = 'en'): 
   const normalized = query.trim();
   if (normalized.length < 2) return [];
   const areas = await list({ q: normalized, limit: 30 });
-  return areas.map((area) => cityFromArea(area, lang));
+  return areas.flatMap((area) => {
+    const city = cityFromArea(area, lang);
+    return city ? [city] : [];
+  });
 }
 
 /** Fetches the selected versioned boundary only when it is needed for the map. */
