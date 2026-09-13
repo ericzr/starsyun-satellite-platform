@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { readFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -35,6 +37,9 @@ if (!requestedLevels.length) {
   process.exit(2);
 }
 const levels = [...new Set(requestedLevels.flatMap((level) => Array.from({ length: level + 1 }, (_, index) => index)))].sort((a, b) => a - b);
+const retryCount = Math.max(0, Number(args.get('retries') || 5));
+const requestDelayMs = Math.max(0, Number(args.get('delay-ms') || 350));
+const failureReportPath = resolve(String(args.get('failure-report') || '.codex-tmp/admin-import-failures.json'));
 
 const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/$/u, '');
 const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -158,10 +163,35 @@ const knownParentNames = new Map([
   ['CHN|3|金湾区', 'zhuhaishi'],
 ]);
 
+function retryAfterMs(response, attempt) {
+  const header = Number(response.headers.get('retry-after'));
+  if (Number.isFinite(header) && header >= 0) return Math.min(60_000, header * 1000);
+  return Math.min(60_000, Math.max(requestDelayMs, 1000 * (2 ** attempt)));
+}
+
+function isRetryableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
 async function getJson(url) {
-  const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(60_000) });
-  if (!response.ok) throw new Error(`${response.status} ${url}`);
-  return response.json();
+  let lastError;
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(60_000) });
+    } catch (error) {
+      lastError = error;
+      if (attempt === retryCount) break;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(60_000, Math.max(requestDelayMs, 1000 * (2 ** attempt)))));
+      continue;
+    }
+    if (response.ok) return response.json();
+    const detail = `${response.status} ${url}`;
+    if (!isRetryableStatus(response.status) || attempt === retryCount) throw new Error(detail);
+    lastError = new Error(detail);
+    await new Promise((resolve) => setTimeout(resolve, retryAfterMs(response, attempt)));
+  }
+  throw lastError || new Error(`request failed ${url}`);
 }
 
 function bboxGeometry(geometry) {
@@ -395,18 +425,19 @@ async function iso2Map() {
 }
 
 async function writeBatch(batch) {
-  const response = await fetch(`${supabaseUrl}/rest/v1/admin_areas?on_conflict=id`, {
-    method: 'POST',
-    headers: {
-      apikey: supabaseKey,
-      ...(supabaseKey.startsWith('sb_') ? {} : { Authorization: `Bearer ${supabaseKey}` }),
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
-    body: JSON.stringify(batch),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    const response = await fetch(`${supabaseUrl}/rest/v1/admin_areas?on_conflict=id`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseKey,
+        ...(supabaseKey.startsWith('sb_') ? {} : { Authorization: `Bearer ${supabaseKey}` }),
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify(batch),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (response.ok) return;
     const detail = await response.text();
     // Supabase may cancel a large statement even when the payload is within
     // the byte limit. Split and retry so one large country cannot stop a
@@ -417,7 +448,8 @@ async function writeBatch(batch) {
       await writeBatch(batch.slice(midpoint));
       return;
     }
-    throw new Error(`Supabase upsert failed (${response.status}): ${detail}`);
+    if (!isRetryableStatus(response.status) || attempt === retryCount) throw new Error(`Supabase upsert failed (${response.status}): ${detail}`);
+    await new Promise((resolve) => setTimeout(resolve, Math.min(60_000, 1000 * (2 ** attempt))));
   }
 }
 
@@ -492,6 +524,7 @@ if (countries.length !== requested.length) {
 }
 
 let imported = 0;
+const failures = [];
 for (const iso3 of countries) {
   const iso2 = isoMap.get(iso3) || null;
   const byLevel = new Map();
@@ -503,6 +536,7 @@ for (const iso3 of countries) {
       byLevel.set(level, rows);
     } catch (error) {
       console.warn(`Skipping ${iso3} ADM${level}: ${error.message}`);
+      failures.push({ country: iso3, level, phase: 'download', error: error.message });
     }
   }
   for (const level of [1, 2, 3]) {
@@ -529,6 +563,7 @@ for (const iso3 of countries) {
       await upsert(rows);
     } catch (error) {
       console.warn(`Skipping ${iso3} ADM${level}: Supabase write failed: ${error.message}`);
+      failures.push({ country: iso3, level, phase: 'write', error: error.message });
       continue;
     }
     imported += rows.length;
@@ -536,4 +571,17 @@ for (const iso3 of countries) {
   }
 }
 
-console.log(`geoBoundaries import complete: ${imported} areas`);
+await mkdir(resolve(failureReportPath, '..'), { recursive: true });
+await writeFile(failureReportPath, `${JSON.stringify({
+  source: source,
+  country: countryArg.toUpperCase(),
+  levels,
+  retries: retryCount,
+  delayMs: requestDelayMs,
+  requestedCountries: countries.length,
+  importedAreas: imported,
+  failures,
+  generatedAt: new Date().toISOString(),
+}, null, 2)}\n`);
+console.log(`geoBoundaries import complete: ${imported} areas; ${failures.length} failed country-level batches`);
+console.log(`Failure report: ${failureReportPath}`);

@@ -38,6 +38,8 @@ const alternatePath = resolve(root, String(args.get('alternate') || '.codex-tmp/
 const outputPath = resolve(root, String(args.get('output') || '.codex-tmp/admin-geonames-name-patch.ndjson'));
 const reportPath = resolve(root, String(args.get('report') || '.codex-tmp/admin-geonames-name-report.json'));
 const apply = args.get('apply') === 'true';
+const applyConcurrency = Math.max(1, Math.min(8, Number(args.get('concurrency') || 4)));
+const retryCount = Math.max(0, Number(args.get('retries') || 5));
 
 function fail(message) {
   throw new Error(message);
@@ -65,8 +67,15 @@ function normalizeName(value) {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/gu, '')
     .toLowerCase()
-    .replace(/\b(autonomous|province|municipality|prefecture|county|city|state|region|oblast|district|department|governorate|republic|kingdom)\b/gu, '')
+    .replace(/\b(autonomous|province|municipality|prefecture|prefektur|ken|county|city|state|region|oblast|district|department|governorate|republic|kingdom|territory|island|islands)\b/gu, '')
     .replace(/[^a-z0-9\u3400-\u9fff]+/gu, '');
+}
+
+function canonicalLanguage(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/_/gu, '-');
+  if (!normalized) return '';
+  if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh';
+  return normalized.split('-')[0];
 }
 
 function parseCodeLine(line, source) {
@@ -160,8 +169,8 @@ async function readAlternates(path, targetIds) {
   const reader = createInterface({ input, crlfDelay: Infinity });
   for await (const line of reader) {
     const [alternateId, geonameId, language, value, preferred, shortName] = line.split('\t');
-    if (!targetIds.has(geonameId) || !languages.has(language) || !value) continue;
-    const languageKey = language === 'zh' ? 'zh' : language;
+    const languageKey = canonicalLanguage(language);
+    if (!targetIds.has(geonameId) || !languages.has(languageKey) || !value) continue;
     const score = (preferred === '1' ? 0 : 10) + (shortName === '1' ? 0 : 1) + value.length / 10000;
     const byLanguage = names.get(geonameId) || new Map();
     const current = byLanguage.get(languageKey);
@@ -172,18 +181,38 @@ async function readAlternates(path, targetIds) {
 }
 
 async function applyPatch(patches) {
-  const concurrency = 8;
+  const concurrency = applyConcurrency;
   let cursor = 0;
   async function worker() {
     while (cursor < patches.length) {
       const patch = patches[cursor++];
-      const response = await fetch(`${url}/rest/v1/admin_areas?id=eq.${encodeURIComponent(patch.id)}`, {
-        method: 'PATCH',
-        headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
-        body: JSON.stringify({ name_local: patch.name_local }),
-        signal: AbortSignal.timeout(60_000),
-      });
-      if (!response.ok) fail(`GeoNames name patch failed (${response.status}) for ${patch.id}`);
+      let lastError;
+      for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+        try {
+          const response = await fetch(`${url}/rest/v1/admin_areas?id=eq.${encodeURIComponent(patch.id)}`, {
+            method: 'PATCH',
+            headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
+            body: JSON.stringify({ name_local: patch.name_local }),
+            signal: AbortSignal.timeout(60_000),
+          });
+          if (response.ok) {
+            lastError = undefined;
+            break;
+          }
+          const detail = `HTTP ${response.status}`;
+          if (![408, 425, 429].includes(response.status) && response.status < 500) fail(`GeoNames name patch failed (${detail}) for ${patch.id}`);
+          lastError = new Error(detail);
+          if (attempt < retryCount) {
+            const retryAfter = Number(response.headers.get('retry-after'));
+            const delay = Number.isFinite(retryAfter) ? Math.min(60_000, retryAfter * 1000) : Math.min(60_000, 1000 * (2 ** attempt));
+            await new Promise((resolveDelay) => setTimeout(resolveDelay, delay));
+          }
+        } catch (error) {
+          lastError = error;
+          if (attempt < retryCount) await new Promise((resolveDelay) => setTimeout(resolveDelay, Math.min(60_000, 1000 * (2 ** attempt))));
+        }
+      }
+      if (lastError) fail(`GeoNames name patch failed (${lastError.message}) for ${patch.id}`);
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, patches.length) }, () => worker()));
@@ -197,14 +226,16 @@ const [admin1Index, admin2Index, admin3Index] = await Promise.all([
   readCodeIndex(admin2Path, 'admin2'),
   readAdm3Index(allCountriesPath),
 ]);
+const iso2ByIso3 = JSON.parse(await readFile(resolve(root, 'src/app/data/country-iso2.json'), 'utf8'));
 const rows = await listAdminRows();
 const targetIds = new Set();
 const matches = [];
 const unmatched = [];
 for (const row of rows) {
-  if (![1, 2].includes(Number(row.level)) || !row.country_iso2) continue;
+  const countryIso2 = String(row.country_iso2 || iso2ByIso3[String(row.country_iso3 || '').toUpperCase()] || '').toUpperCase();
+  if (![1, 2, 3].includes(Number(row.level)) || !countryIso2) continue;
   const index = Number(row.level) === 1 ? admin1Index : Number(row.level) === 2 ? admin2Index : admin3Index;
-  const keyName = `${String(row.country_iso2).toUpperCase()}:${row.level}:${normalizeName(row.name_en)}`;
+  const keyName = `${countryIso2}:${row.level}:${normalizeName(row.name_en)}`;
   const candidates = index.get(keyName) || [];
   if (candidates.length !== 1) {
     unmatched.push({ id: row.id, level: row.level, name_en: row.name_en, candidates: candidates.length });
@@ -236,6 +267,8 @@ const report = {
   source_license: 'CC BY 4.0; attribution required',
   country: countryFilter,
   languages: [...languages],
+  apply_concurrency: applyConcurrency,
+  retries: retryCount,
   fetched_rows: rows.length,
   matched_rows: matches.length,
   all_countries_available: admin3Index.size > 0,
