@@ -89,6 +89,25 @@ npm run check:admin-localization -- \
 
 报告中的 `countries.*.missing.zh` 是每个国家缺少中文名称的记录数；名称补丁或导入失败时，先按报告定位国家再重试，不要通过前端临时翻译或手工绘制边界来掩盖缺口。
 
+注意：`/etc/starsyun/starsyun.env` 通常是 root 写入、`starsyun` 组可读。不要在普通 `ubuntu` shell 中直接执行 `. /etc/starsyun/starsyun.env`，否则会出现 `Permission denied`，后续导入不会得到有效的 Supabase 凭据。使用应用用户读取并执行导入：
+
+```bash
+sudo -u starsyun /usr/bin/bash -lc '
+  set -a
+  . /etc/starsyun/starsyun.env
+  set +a
+  supabase_secret="${SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}}"
+  test -n "$SUPABASE_URL"
+  test -n "$supabase_secret"
+  SUPABASE_URL="$SUPABASE_URL" SUPABASE_SECRET_KEY="$supabase_secret" \
+    /usr/bin/node /srv/starsyun/current/scripts/import-geoboundaries.mjs \
+    --country=ALL --levels=0 --delay-ms=750 --retries=6 \
+    --failure-report=/srv/starsyun/current/.codex-tmp/admin-import-adm0-failures.json
+'
+```
+
+`--levels=0` 只刷新国家外框；要刷新省/州及下级真实矢量，随后按批次执行 `--levels=1`、`--levels=2,3`。导入结束必须看到 `geoBoundaries import complete`，并检查 failure report；只有 `/readyz` 返回 200 不能证明行政数据已写入。
+
 ## 服务器目录
 
 ```text
