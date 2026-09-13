@@ -43,8 +43,9 @@ type AdminArea = {
 
 const API = '/api/admin/areas';
 // Bump this whenever the serialized country labels or their fallback data
-// changes. Older entries contain English labels produced while ISO2 was absent.
-const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v6';
+// changes. Older entries may contain labels produced by the previous fallback
+// policy and must not survive a language-policy change.
+const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v7';
 
 const LANGUAGE_NAME_KEYS: Record<Exclude<Lang, 'zh' | 'en'>, string[]> = {
   ar: ['ar', 'name:ar'],
@@ -74,10 +75,6 @@ function isChinese(value: string | undefined) {
   return Boolean(value && /[\u3400-\u9fff]/u.test(value));
 }
 
-function sourceLocalName(area: AdminArea) {
-  return area.nameLocal.local || area.nameLocal['name:local'] || undefined;
-}
-
 function untranslatedName(area: AdminArea, lang: Lang) {
   if (lang === 'en') return area.nameEn;
   const labels: Record<Exclude<Lang, 'en'>, string> = {
@@ -91,7 +88,10 @@ function untranslatedName(area: AdminArea, lang: Lang) {
     ko: '번역명 없음',
     de: 'Kein übersetzter Name',
   };
-  return `${labels[lang]} · ${area.nameEn}`;
+  // Do not append the English source name here. A missing translation must be
+  // visibly marked in the active locale rather than silently falling back to
+  // English (which made the Chinese selector appear bilingual).
+  return labels[lang];
 }
 
 export function resolveCountryIso2(area: Pick<AdminArea, 'countryIso2' | 'countryIso3'>): string | undefined {
@@ -134,7 +134,10 @@ export function localizedName(area: AdminArea, lang: Lang): string {
     const value = area.nameLocal[key];
     if (value) return value;
   }
-  return intlCountryName(area, lang) || sourceLocalName(area) || untranslatedName(area, lang);
+  // `local` is the source dataset's language and is not guaranteed to match
+  // the active UI language. Returning it here reintroduces mixed-language
+  // options, so unresolved names stay as a localized placeholder.
+  return intlCountryName(area, lang) || untranslatedName(area, lang);
 }
 
 function feature(geometry?: GeoJSON.Geometry) {
