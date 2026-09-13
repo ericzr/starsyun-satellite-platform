@@ -79,6 +79,16 @@ npm run import:admin:patch -- --input=data/admin/taiwan-adm2.ndjson --apply
 npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3
 ```
 
+全球 ADM1-ADM3 导入和 GeoNames 名称补丁完成后，使用只读审计确认覆盖率，不要只看前端下拉框：
+
+```bash
+npm run check:admin-localization -- \
+  --languages=zh,en,ja \
+  --output=.codex-tmp/admin-localization-report.json
+```
+
+报告中的 `countries.*.missing.zh` 是每个国家缺少中文名称的记录数；名称补丁或导入失败时，先按报告定位国家再重试，不要通过前端临时翻译或手工绘制边界来掩盖缺口。
+
 ## 服务器目录
 
 ```text
