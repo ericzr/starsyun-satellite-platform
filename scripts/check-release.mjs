@@ -30,6 +30,7 @@ for (const artifact of [
   'dist/index.html',
   'dist-server/server.js',
   'package.json',
+  'src/app/data/country-iso2.json',
   'scripts/import-geoboundaries.mjs',
   'scripts/check-admin-data.mjs',
 ])
