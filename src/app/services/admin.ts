@@ -45,7 +45,7 @@ const API = '/api/admin/areas';
 // Bump this whenever the serialized country labels or their fallback data
 // changes. Older entries may contain labels produced by the previous fallback
 // policy and must not survive a language-policy change.
-const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v7';
+const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v8';
 
 const LANGUAGE_NAME_KEYS: Record<Exclude<Lang, 'zh' | 'en'>, string[]> = {
   ar: ['ar', 'name:ar'],
@@ -75,6 +75,10 @@ function isChinese(value: string | undefined) {
   return Boolean(value && /[\u3400-\u9fff]/u.test(value));
 }
 
+function sourceLocalName(area: AdminArea) {
+  return area.nameLocal.local || area.nameLocal['name:local'] || undefined;
+}
+
 export function resolveCountryIso2(area: Pick<AdminArea, 'countryIso2' | 'countryIso3'>): string | undefined {
   const explicit = area.countryIso2?.trim().toUpperCase();
   if (explicit && /^[A-Z]{2}$/u.test(explicit)) return explicit;
@@ -97,27 +101,29 @@ function intlCountryName(area: AdminArea, lang: Lang) {
  * Resolve one canonical display name for the current UI language.
  * `local` is source-language metadata, not a translation: using it for every
  * locale is what previously caused mixed Chinese/English (and other source
- * language) labels in the selector. When a translation is unavailable, the
- * area is omitted from locale-specific lists instead of presenting a
- * placeholder or an English source name.
+ * language) labels in the selector. The directory itself is never filtered:
+ * if a standard translation is not yet available, use the source's canonical
+ * local name and finally its stable English identifier. A background name
+ * enrichment job can then replace that value without changing the area ID or
+ * boundary. This preserves complete administrative coverage while keeping
+ * the fallback deterministic and free of placeholder text.
  */
-export function localizedName(area: AdminArea, lang: Lang): string | undefined {
+export function localizedName(area: AdminArea, lang: Lang): string {
   if (lang === 'zh') {
     return area.nameLocal['zh-Hans']
       || area.nameLocal.zh
       || area.nameLocal['name:zh']
       || (isChinese(area.nameLocal.local) ? area.nameLocal.local : undefined)
-      || intlCountryName(area, lang);
+      || intlCountryName(area, lang)
+      || sourceLocalName(area)
+      || area.nameEn;
   }
-  if (lang === 'en') return area.nameLocal.en || area.nameLocal['name:en'] || intlCountryName(area, lang) || area.nameEn || undefined;
+  if (lang === 'en') return area.nameLocal.en || area.nameLocal['name:en'] || intlCountryName(area, lang) || area.nameEn;
   for (const key of LANGUAGE_NAME_KEYS[lang]) {
     const value = area.nameLocal[key];
     if (value) return value;
   }
-  // `local` is the source dataset's language and is not guaranteed to match
-  // the active UI language. Never return it (or an English source name) as a
-  // translation. Unresolved areas are filtered out by the list functions.
-  return intlCountryName(area, lang);
+  return intlCountryName(area, lang) || sourceLocalName(area) || area.nameEn;
 }
 
 function feature(geometry?: GeoJSON.Geometry) {
@@ -126,9 +132,8 @@ function feature(geometry?: GeoJSON.Geometry) {
     : undefined;
 }
 
-function cityFromArea(area: AdminArea, lang: Lang): GlobalCity | null {
+function cityFromArea(area: AdminArea, lang: Lang): GlobalCity {
   const name = localizedName(area, lang);
-  if (!name) return null;
   const [lon, lat] = area.centroid ?? [NaN, NaN];
   return {
     id: area.id,
@@ -165,17 +170,13 @@ export async function fetchGlobalCountries(lang: Lang = 'en'): Promise<GlobalCou
     // Disabled storage should not stop the directory request.
   }
   const areas = await list({ level: 0, limit: 500 });
-  const countries = areas.flatMap((area) => {
-    const name = localizedName(area, lang);
-    if (!name) return [];
-    return [{
+  const countries = areas.map((area) => ({
       id: area.id,
-      name,
+      name: localizedName(area, lang),
       iso2: resolveCountryIso2(area) ?? '',
       iso3: area.countryIso3,
       states: [],
-    }];
-  }).filter((country) => country.iso3 && country.iso3 !== 'TWN' && country.iso2 !== 'TW');
+    })).filter((country) => country.iso3 && country.iso3 !== 'TWN' && country.iso2 !== 'TW');
   try {
     sessionStorage.setItem(`${COUNTRY_CACHE_KEY}:${lang}`, JSON.stringify(countries));
   } catch {
@@ -186,26 +187,17 @@ export async function fetchGlobalCountries(lang: Lang = 'en'): Promise<GlobalCou
 
 export async function fetchGlobalStates(countryIso3: string, lang: Lang = 'en'): Promise<GlobalState[]> {
   const areas = await list({ country: countryIso3, level: 1, limit: 5000 });
-  return areas.flatMap((area) => {
-    const name = localizedName(area, lang);
-    return name ? [{ id: area.id, name }] : [];
-  });
+  return areas.map((area) => ({ id: area.id, name: localizedName(area, lang) }));
 }
 
 export async function fetchGlobalCities(parentId: string, lang: Lang = 'en'): Promise<GlobalCity[]> {
   const areas = await list({ parent: parentId, level: 2, limit: 5000 });
-  return areas.flatMap((area) => {
-    const city = cityFromArea(area, lang);
-    return city ? [city] : [];
-  });
+  return areas.map((area) => cityFromArea(area, lang));
 }
 
 export async function fetchGlobalDistricts(parentId: string, lang: Lang = 'en'): Promise<GlobalCity[]> {
   const areas = await list({ parent: parentId, level: 3, limit: 5000 });
-  return areas.flatMap((area) => {
-    const district = cityFromArea(area, lang);
-    return district ? [district] : [];
-  });
+  return areas.map((area) => cityFromArea(area, lang));
 }
 
 /** Search the server-side ADM0-ADM3 directory without exposing database credentials. */
@@ -213,10 +205,7 @@ export async function searchGlobalAdminAreas(query: string, lang: Lang = 'en'): 
   const normalized = query.trim();
   if (normalized.length < 2) return [];
   const areas = await list({ q: normalized, limit: 30 });
-  return areas.flatMap((area) => {
-    const city = cityFromArea(area, lang);
-    return city ? [city] : [];
-  });
+  return areas.map((area) => cityFromArea(area, lang));
 }
 
 /** Fetches the selected versioned boundary only when it is needed for the map. */
