@@ -40,6 +40,11 @@ const levels = [...new Set(requestedLevels.flatMap((level) => Array.from({ lengt
 const retryCount = Math.max(0, Number(args.get('retries') || 5));
 const requestDelayMs = Math.max(0, Number(args.get('delay-ms') || 350));
 const failureReportPath = resolve(String(args.get('failure-report') || '.codex-tmp/admin-import-failures.json'));
+// PostgREST/Supabase can time out while upserting the largest single-country
+// polygons (Canada is about 12 MB even in geoBoundaries' simplified product).
+// Five MB retains substantially more coastline detail than the normal
+// low-zoom map can display while remaining below the verified write ceiling.
+const maxSingleGeometryBytes = Math.max(250_000, Number(args.get('max-single-geometry-bytes') || 5_000_000));
 
 const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/$/u, '');
 const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -251,6 +256,108 @@ function representativePoint(geometry, bbox) {
   return first.length === 2 ? first : [0, 0];
 }
 
+function squaredSegmentDistance(point, start, end) {
+  let x = start[0];
+  let y = start[1];
+  let dx = end[0] - x;
+  let dy = end[1] - y;
+  if (dx || dy) {
+    const t = ((point[0] - x) * dx + (point[1] - y) * dy) / ((dx * dx) + (dy * dy));
+    if (t > 1) {
+      x = end[0];
+      y = end[1];
+    } else if (t > 0) {
+      x += dx * t;
+      y += dy * t;
+    }
+  }
+  dx = point[0] - x;
+  dy = point[1] - y;
+  return (dx * dx) + (dy * dy);
+}
+
+function simplifyLine(points, tolerance) {
+  if (points.length <= 2) return points;
+  const keep = new Uint8Array(points.length);
+  const stack = [[0, points.length - 1]];
+  const threshold = tolerance * tolerance;
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  while (stack.length) {
+    const [start, end] = stack.pop();
+    let farthest = -1;
+    let maximum = threshold;
+    for (let index = start + 1; index < end; index += 1) {
+      const distance = squaredSegmentDistance(points[index], points[start], points[end]);
+      if (distance > maximum) {
+        farthest = index;
+        maximum = distance;
+      }
+    }
+    if (farthest >= 0) {
+      keep[farthest] = 1;
+      stack.push([start, farthest], [farthest, end]);
+    }
+  }
+  return points.filter((_, index) => keep[index]);
+}
+
+function simplifyRingForDisplay(ring, tolerance) {
+  if (!Array.isArray(ring) || ring.length < 5) return ring;
+  const closed = ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1];
+  const body = closed ? ring.slice(0, -1) : ring.slice();
+  if (body.length < 4) return ring;
+
+  // Split a closed ring at its horizontal extrema before applying
+  // Douglas-Peucker. Running the algorithm against two adjacent endpoints
+  // can otherwise flatten the whole ring into its closing edge.
+  let left = 0;
+  let right = 0;
+  for (let index = 1; index < body.length; index += 1) {
+    if (body[index][0] < body[left][0]) left = index;
+    if (body[index][0] > body[right][0]) right = index;
+  }
+  if (left === right) return ring;
+  const start = Math.min(left, right);
+  const end = Math.max(left, right);
+  const firstArc = body.slice(start, end + 1);
+  const secondArc = [...body.slice(end), ...body.slice(0, start + 1)];
+  const simplified = [
+    ...simplifyLine(firstArc, tolerance),
+    ...simplifyLine(secondArc, tolerance).slice(1, -1),
+  ];
+  if (simplified.length < 3) return ring;
+  simplified.push(simplified[0]);
+  return simplified;
+}
+
+function simplifyGeometryForDisplay(geometry, tolerance) {
+  if (geometry.type === 'Polygon') {
+    return { ...geometry, coordinates: geometry.coordinates.map((ring) => simplifyRingForDisplay(ring, tolerance)) };
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((polygon) => polygon.map((ring) => simplifyRingForDisplay(ring, tolerance))),
+    };
+  }
+  return geometry;
+}
+
+function fitGeometryForDatabase(geometry, iso3, level) {
+  const originalBytes = Buffer.byteLength(JSON.stringify(geometry), 'utf8');
+  if (originalBytes <= maxSingleGeometryBytes) return geometry;
+  for (const tolerance of [0.002, 0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.1]) {
+    const simplified = simplifyGeometryForDisplay(geometry, tolerance);
+    const bytes = Buffer.byteLength(JSON.stringify(simplified), 'utf8');
+    if (bytes <= maxSingleGeometryBytes) {
+      console.warn(`${iso3} ADM${level}: display geometry reduced from ${originalBytes} to ${bytes} bytes at ${tolerance}° tolerance`);
+      return simplified;
+    }
+  }
+  throw new Error(`${iso3} ADM${level} geometry remains larger than ${maxSingleGeometryBytes} bytes after display simplification`);
+}
+
 function pointInRing(point, ring) {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -377,7 +484,9 @@ async function loadDataset(meta, iso3, level, iso2) {
   const payload = await getJson(url);
   const features = Array.isArray(payload.features) ? payload.features : [];
   return features.flatMap((feature, index) => {
-    const geometry = feature.geometry;
+    const geometry = feature.geometry
+      ? fitGeometryForDatabase(feature.geometry, iso3, level)
+      : feature.geometry;
     const bbox = bboxGeometry(geometry);
     if (!geometry || !bbox) return [];
     const properties = feature.properties || {};
