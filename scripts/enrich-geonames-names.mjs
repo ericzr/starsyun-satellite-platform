@@ -30,7 +30,7 @@ const args = new Map(process.argv.slice(2).map((value) => {
 const url = (process.env.SUPABASE_URL || '').replace(/\/$/u, '');
 const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const countryFilter = String(args.get('country') || 'ALL').toUpperCase();
-const languages = new Set(String(args.get('languages') || 'zh,zh-Hans,en,fr,es,de,pt,ru,ja,ko,ar').split(',').map((value) => value.trim()).filter(Boolean));
+const languages = new Set(String(args.get('languages') || 'zh,zh-Hans,en,fr,es,de,pt,ru,ja,ko,ar').split(',').map((value) => canonicalLanguage(value)).filter(Boolean));
 const admin1Path = resolve(root, String(args.get('admin1') || '.codex-tmp/geonames/admin1CodesASCII.txt'));
 const admin2Path = resolve(root, String(args.get('admin2') || '.codex-tmp/geonames/admin2Codes.txt'));
 const allCountriesPath = resolve(root, String(args.get('all-countries') || '.codex-tmp/geonames/allCountries.zip'));
