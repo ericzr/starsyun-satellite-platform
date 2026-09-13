@@ -44,7 +44,7 @@ type AdminArea = {
 const API = '/api/admin/areas';
 // Bump this whenever the serialized country labels or their fallback data
 // changes. Older entries contain English labels produced while ISO2 was absent.
-const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v5';
+const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v6';
 
 const LANGUAGE_NAME_KEYS: Record<Exclude<Lang, 'zh' | 'en'>, string[]> = {
   ar: ['ar', 'name:ar'],
@@ -78,6 +78,22 @@ function sourceLocalName(area: AdminArea) {
   return area.nameLocal.local || area.nameLocal['name:local'] || undefined;
 }
 
+function untranslatedName(area: AdminArea, lang: Lang) {
+  if (lang === 'en') return area.nameEn;
+  const labels: Record<Exclude<Lang, 'en'>, string> = {
+    zh: '暂无中文译名',
+    ar: 'لا يوجد اسم مترجم',
+    es: 'Sin nombre traducido',
+    fr: 'Nom non traduit',
+    pt: 'Nome não traduzido',
+    ru: 'Нет перевода',
+    ja: '翻訳名なし',
+    ko: '번역명 없음',
+    de: 'Kein übersetzter Name',
+  };
+  return `${labels[lang]} · ${area.nameEn}`;
+}
+
 export function resolveCountryIso2(area: Pick<AdminArea, 'countryIso2' | 'countryIso3'>): string | undefined {
   const explicit = area.countryIso2?.trim().toUpperCase();
   if (explicit && /^[A-Z]{2}$/u.test(explicit)) return explicit;
@@ -100,8 +116,9 @@ function intlCountryName(area: AdminArea, lang: Lang) {
  * Resolve one canonical display name for the current UI language.
  * `local` is source-language metadata, not a translation: using it for every
  * locale is what previously caused mixed Chinese/English (and other source
- * language) labels in the selector. When a translation is unavailable, use
- * the source-local label before the required English completeness fallback.
+ * language) labels in the selector. When a translation is unavailable, mark
+ * the original source name explicitly instead of presenting English as a
+ * translated label.
  */
 export function localizedName(area: AdminArea, lang: Lang): string {
   if (lang === 'zh') {
@@ -110,19 +127,14 @@ export function localizedName(area: AdminArea, lang: Lang): string {
       || area.nameLocal['name:zh']
       || (isChinese(area.nameLocal.local) ? area.nameLocal.local : undefined)
       || intlCountryName(area, lang)
-      || sourceLocalName(area)
-      || area.nameEn;
+      || untranslatedName(area, lang);
   }
   if (lang === 'en') return area.nameLocal.en || area.nameLocal['name:en'] || intlCountryName(area, lang) || area.nameEn;
   for (const key of LANGUAGE_NAME_KEYS[lang]) {
     const value = area.nameLocal[key];
     if (value) return value;
   }
-  return area.nameLocal.en
-    || area.nameLocal['name:en']
-    || intlCountryName(area, lang)
-    || sourceLocalName(area)
-    || area.nameEn;
+  return intlCountryName(area, lang) || sourceLocalName(area) || untranslatedName(area, lang);
 }
 
 function feature(geometry?: GeoJSON.Geometry) {

@@ -97,11 +97,19 @@ SUPABASE_SECRET_KEY='<server-only-key>' \
 node scripts/import-geoboundaries.mjs --country=CHN
 ```
 
-先执行中国和核心业务区域做验收，再分批导入全球：
+先执行中国和核心业务区域做验收，再分批导入全球。导入器对 geoBoundaries 的 429/5xx 使用指数退避重试，并生成失败国家/层级清单；不要把“进程退出 0”当成全球完整的证明：
 
 ```bash
-node scripts/import-geoboundaries.mjs --country=ALL --levels=0,1
-node scripts/import-geoboundaries.mjs --country=ALL --levels=2,3
+node scripts/import-geoboundaries.mjs --country=ALL --levels=1 --delay-ms=500 --retries=6 \
+  --failure-report=.codex-tmp/admin-import-adm1-failures.json
+node scripts/import-geoboundaries.mjs --country=ALL --levels=2,3 --delay-ms=750 --retries=6 \
+  --failure-report=.codex-tmp/admin-import-adm2-adm3-failures.json
+```
+
+第一条命令会补齐 ADM0/ADM1，适合先恢复全球省州级选择器；第二条再补 ADM2/ADM3。每条命令结束后必须检查失败报告并按国家重试，例如：
+
+```bash
+node scripts/import-geoboundaries.mjs --country=JPN --levels=1,2,3 --delay-ms=500 --retries=6
 ```
 
 ADM3 数据量和几何体很大，生产导入应在服务器后台运行并监控磁盘、Supabase 请求量。导入器保存数据源的原始 GeoJSON，按最多 100 条且不超过约 1.5 MB 的批次 upsert，并跳过没有公开 ADM3 数据的国家，不用地理编码结果“补齐”假数据。

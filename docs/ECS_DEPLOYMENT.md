@@ -79,6 +79,39 @@ npm run import:admin:patch -- --input=data/admin/taiwan-adm2.ndjson --apply
 npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3
 ```
 
+全球 ADM1-ADM3 导入和 GeoNames 名称补丁完成后，使用只读审计确认覆盖率，不要只看前端下拉框：
+
+```bash
+npm run check:admin-localization -- \
+  --languages=zh,en,ja \
+  --output=.codex-tmp/admin-localization-report.json
+```
+
+报告中的 `countries.*.missing.zh` 是每个国家缺少中文名称的记录数；名称补丁或导入失败时，先按报告定位国家再重试，不要通过前端临时翻译或手工绘制边界来掩盖缺口。
+
+注意：`/etc/starsyun/starsyun.env` 是受保护的 root 运行时配置。不要在普通 `ubuntu` 或 `starsyun` shell 中直接执行 `. /etc/starsyun/starsyun.env`，否则会出现 `Permission denied`。由 root shell 读取配置，再只把导入器必需的变量传给非特权 `starsyun` 用户：
+
+```bash
+sudo /usr/bin/bash -lc '
+  set -euo pipefail
+  set -a
+  . /etc/starsyun/starsyun.env
+  set +a
+  supabase_secret="${SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}}"
+  : "${SUPABASE_URL:?SUPABASE_URL missing}"
+  : "${supabase_secret:?Supabase key missing}"
+  sudo -u starsyun mkdir -p /srv/starsyun/current/.codex-tmp
+  sudo -u starsyun env \
+    SUPABASE_URL="$SUPABASE_URL" \
+    SUPABASE_SECRET_KEY="$supabase_secret" \
+    /usr/bin/node /srv/starsyun/current/scripts/import-geoboundaries.mjs \
+    --country=ALL --levels=0 --delay-ms=750 --retries=6 \
+    --failure-report=/srv/starsyun/current/.codex-tmp/admin-import-adm0-failures.json
+'
+```
+
+`--levels=0` 只刷新国家外框；要刷新省/州及下级真实矢量，随后按批次执行 `--levels=1`、`--levels=2,3`。导入结束必须看到 `geoBoundaries import complete`，并检查 failure report；只有 `/readyz` 返回 200 不能证明行政数据已写入。
+
 ## 服务器目录
 
 ```text
