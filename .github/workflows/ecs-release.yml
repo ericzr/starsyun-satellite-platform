@@ -46,7 +46,7 @@ jobs:
         run: npm run check:release
 
       - name: Package release
-        run: tar -czf "starsyun-${GITHUB_SHA}.tar.gz" dist dist-server package.json scripts supabase/migrations deploy/systemd deploy/nginx
+        run: tar -czf "starsyun-${GITHUB_SHA}.tar.gz" dist dist-server package.json scripts src/app/data/country-iso2.json supabase/migrations deploy/systemd deploy/nginx
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
