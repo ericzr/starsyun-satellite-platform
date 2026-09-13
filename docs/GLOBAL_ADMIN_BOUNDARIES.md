@@ -70,7 +70,7 @@ npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3
 - `level=2`：市、县、州级行政区
 - `level=3`：区、乡镇或数据源定义的三级行政区
 - `parent_id`：导入器依据几何包含关系生成，无法可靠匹配时保持空值并记录警告
-- `geometry`：WGS84 GeoJSON；`bbox`、`centroid_*` 用于列表和地图快速定位
+- `geometry`：WGS84 GeoJSON，直接保留 geoBoundaries 提供的 `simplifiedGeometryGeoJSON`；导入器不再对多岛国家做二次等距抽点。`bbox`、`centroid_*` 用于列表和地图快速定位。这样日本、美国、芬兰、加拿大、印尼等多岛/碎片化边界仍使用真实源矢量，而不是应用层手工勾画的外框。
 - `name_local`：保存数据源本地名称和 GeoNames 多语言别名；中国 ADM0/ADM1 在导入时补齐中文规范名称（含“台湾省”），不再由浏览器临时翻译或拼接。名称层的增量流程见 [行政区多语言名称](ADMIN_NAME_LOCALIZATION.md)
 - `source_license`、`source_url`：随导入批次保存数据源许可和来源链接，供合规复核和后续更新追溯
 
