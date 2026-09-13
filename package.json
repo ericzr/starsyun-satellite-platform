@@ -23,6 +23,7 @@
     "enrich:admin:names": "node scripts/enrich-geonames-names.mjs",
     "inventory:production": "node scripts/production-inventory.mjs",
     "test:admin-data": "node --test scripts/tests/admin-data-validation.test.mjs",
+    "test:admin-localization": "node --test scripts/tests/country-iso2.test.mjs",
     "import:admin": "node scripts/import-geoboundaries.mjs",
     "start": "node dist-server/server.js",
     "preview": "vite preview",

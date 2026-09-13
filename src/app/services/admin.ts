@@ -1,4 +1,5 @@
 import type { Lang } from '../i18n';
+import countryIso2ByIso3 from '../data/country-iso2.json';
 
 export interface GlobalState {
   id: string;
@@ -41,7 +42,9 @@ type AdminArea = {
 };
 
 const API = '/api/admin/areas';
-const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v4';
+// Bump this whenever the serialized country labels or their fallback data
+// changes. Older entries contain English labels produced while ISO2 was absent.
+const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v5';
 
 const LANGUAGE_NAME_KEYS: Record<Exclude<Lang, 'zh' | 'en'>, string[]> = {
   ar: ['ar', 'name:ar'],
@@ -75,11 +78,19 @@ function sourceLocalName(area: AdminArea) {
   return area.nameLocal.local || area.nameLocal['name:local'] || undefined;
 }
 
+export function resolveCountryIso2(area: Pick<AdminArea, 'countryIso2' | 'countryIso3'>): string | undefined {
+  const explicit = area.countryIso2?.trim().toUpperCase();
+  if (explicit && /^[A-Z]{2}$/u.test(explicit)) return explicit;
+  const mapped = countryIso2ByIso3[String(area.countryIso3 || '').trim().toUpperCase() as keyof typeof countryIso2ByIso3];
+  return mapped || undefined;
+}
+
 function intlCountryName(area: AdminArea, lang: Lang) {
-  if (area.level !== 0 || !area.countryIso2 || typeof Intl === 'undefined' || !('DisplayNames' in Intl)) return undefined;
+  const iso2 = resolveCountryIso2(area);
+  if (area.level !== 0 || !iso2 || typeof Intl === 'undefined' || !('DisplayNames' in Intl)) return undefined;
   try {
     const displayNames = new Intl.DisplayNames([DISPLAY_NAME_LOCALES[lang]], { type: 'region' });
-    return displayNames.of(area.countryIso2.toUpperCase()) || undefined;
+    return displayNames.of(iso2) || undefined;
   } catch {
     return undefined;
   }
@@ -160,7 +171,7 @@ export async function fetchGlobalCountries(lang: Lang = 'en'): Promise<GlobalCou
   const countries = areas.map((area) => ({
     id: area.id,
     name: localizedName(area, lang),
-    iso2: area.countryIso2 ?? '',
+    iso2: resolveCountryIso2(area) ?? '',
     iso3: area.countryIso3,
     states: [],
   })).filter((country) => country.iso3 && country.iso3 !== 'TWN' && country.iso2 !== 'TW');
