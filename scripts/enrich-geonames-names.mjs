@@ -112,13 +112,14 @@ async function readCodeIndex(path, source) {
   return index;
 }
 
-async function readAllCountriesAdminIndex(path) {
+async function readAllCountriesAdminIndex(path, { exactKeys, nameKeys } = {}) {
   try {
     await access(path, constants.R_OK);
   } catch {
-    return new Map();
+    return { index: new Map(), nameIndex: new Map() };
   }
   const index = new Map();
+  const nameIndex = new Map();
   const input = allCountriesStream(path);
   const reader = createInterface({ input, crlfDelay: Infinity });
   for await (const line of reader) {
@@ -129,13 +130,19 @@ async function readAllCountriesAdminIndex(path) {
     const names = new Set([normalizeName(name), normalizeName(asciiName)]);
     for (const normalized of names) {
       if (!normalized) continue;
+      const nameKey = `${countryIso2.toUpperCase()}:${normalized}`;
       const entryKey = `${countryIso2.toUpperCase()}:${level}:${normalized}`;
+      if ((exactKeys && !exactKeys.has(entryKey)) && (nameKeys && !nameKeys.has(nameKey))) continue;
+      const entry = { source: 'allCountries', countryIso2: countryIso2.toUpperCase(), level, geonameId, names };
       const values = index.get(entryKey) || [];
-      values.push({ source: 'allCountries', countryIso2: countryIso2.toUpperCase(), level, geonameId, names });
+      values.push(entry);
       index.set(entryKey, values);
+      const nameValues = nameIndex.get(nameKey) || [];
+      nameValues.push(entry);
+      nameIndex.set(nameKey, nameValues);
     }
   }
-  return index;
+  return { index, nameIndex };
 }
 
 async function listAdminRows() {
@@ -230,13 +237,24 @@ async function applyPatch(patches) {
 await requiredFile(admin1Path, 'GeoNames admin1CodesASCII.txt');
 await requiredFile(admin2Path, 'GeoNames admin2Codes.txt');
 await requiredFile(alternatePath, 'GeoNames alternateNamesV2.txt or archive');
-const [admin1Index, admin2Index, allCountriesIndex] = await Promise.all([
-  readCodeIndex(admin1Path, 'admin1'),
-  readCodeIndex(admin2Path, 'admin2'),
-  readAllCountriesAdminIndex(allCountriesPath),
-]);
 const iso2ByIso3 = JSON.parse(await readFile(resolve(root, 'src/app/data/country-iso2.json'), 'utf8'));
 const rows = await listAdminRows();
+const targetExactKeys = new Set();
+const targetNameKeys = new Set();
+for (const row of rows) {
+  const countryIso2 = String(row.country_iso2 || iso2ByIso3[String(row.country_iso3 || '').toUpperCase()] || '').toUpperCase();
+  if (![1, 2, 3].includes(Number(row.level)) || !countryIso2) continue;
+  const normalized = normalizeName(row.name_en);
+  targetExactKeys.add(`${countryIso2}:${Number(row.level)}:${normalized}`);
+  targetNameKeys.add(`${countryIso2}:${normalized}`);
+}
+const [admin1Index, admin2Index, allCountriesData] = await Promise.all([
+  readCodeIndex(admin1Path, 'admin1'),
+  readCodeIndex(admin2Path, 'admin2'),
+  readAllCountriesAdminIndex(allCountriesPath, { exactKeys: targetExactKeys, nameKeys: targetNameKeys }),
+]);
+const allCountriesIndex = allCountriesData.index;
+const allCountriesNameIndex = allCountriesData.nameIndex;
 const targetIds = new Set();
 const matches = [];
 const unmatched = [];
@@ -253,9 +271,7 @@ for (const row of rows) {
     candidates = allCountriesIndex.get(keyName) || [];
     if (candidates.length !== 1) {
       const normalizedName = normalizeName(row.name_en);
-      const byName = [...allCountriesIndex.entries()]
-        .filter(([key]) => key.startsWith(`${countryIso2}:`) && key.endsWith(`:${normalizedName}`))
-        .flatMap(([, values]) => values);
+      const byName = allCountriesNameIndex.get(`${countryIso2}:${normalizedName}`) || [];
       if (byName.length === 1) candidates = byName;
     }
   }
