@@ -44,7 +44,7 @@ type AdminArea = {
 const API = '/api/admin/areas';
 // Bump this whenever the serialized country labels or their fallback data
 // changes. Older entries contain English labels produced while ISO2 was absent.
-const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v5';
+const COUNTRY_CACHE_KEY = 'starsyun-admin-countries-v6';
 
 const LANGUAGE_NAME_KEYS: Record<Exclude<Lang, 'zh' | 'en'>, string[]> = {
   ar: ['ar', 'name:ar'],
