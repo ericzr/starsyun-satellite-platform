@@ -15,6 +15,7 @@
     "check:supabase": "node scripts/check-supabase.mjs",
     "check:geo": "node scripts/check-geo.mjs",
     "check:admin-data": "node scripts/check-admin-data.mjs",
+    "check:admin-localization": "node scripts/check-admin-localization.mjs",
     "audit:admin-source": "python3 scripts/audit-admin-shapefile-source.py",
     "stage:admin:n159": "python3 scripts/stage-n159-admin.py",
     "stage:admin:taiwan": "python3 scripts/stage-taiwan-adm2.py",
