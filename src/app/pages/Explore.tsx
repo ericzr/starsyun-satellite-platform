@@ -129,10 +129,9 @@ export function Explore() {
   const [params] = useSearchParams();
   const queryParam = params.get('q');
   const categoryParam = params.get('category');
-  // Administrative options use the canonical English names in every UI
-  // language. This prevents a Chinese selector from mixing translated and
-  // source-language labels while the surrounding controls remain localized.
-  const adminLang = 'en' as const;
+  // Administrative labels follow the active site language. The service layer
+  // applies a deterministic translation/fallback policy for every locale.
+  const adminLang = lang;
 
   const [search, setSearch] = useState('');
   const [selectionMode, setSelectionMode] = useState<'admin' | 'vector'>('admin');
@@ -208,6 +207,22 @@ export function Explore() {
     return () => {
       cancelled = true;
     };
+  }, [adminLang]);
+
+  // Do not leave labels from the previous locale visible while the new
+  // language-specific directory requests are in flight. Keep the selected
+  // IDs, then refresh the selected boundary so its search label changes too.
+  useEffect(() => {
+    setGlobalCountries([]);
+    setGlobalStates([]);
+    setGlobalCities([]);
+    setGlobalDistricts([]);
+    if (adminLevel3) void focusAdminArea(adminLevel3, 3);
+    else if (adminLevel2) void focusAdminArea(adminLevel2, 2);
+    else if (adminLevel1) void focusAdminArea(adminLevel1, 1);
+    else if (adminCountry) void focusAdminArea(adminCountry, 0);
+    // The selected IDs are intentionally stable across a locale switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminLang]);
 
   // Home category cards carry a filter intent in the URL so deep links and

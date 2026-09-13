@@ -71,7 +71,7 @@ npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3
 - `level=3`：区、乡镇或数据源定义的三级行政区
 - `parent_id`：导入器依据几何包含关系生成，无法可靠匹配时保持空值并记录警告
 - `geometry`：WGS84 GeoJSON；`bbox`、`centroid_*` 用于列表和地图快速定位
-- `name_local`：优先保存数据源提供的本地语言名称；中国 ADM0/ADM1 在导入时补齐中文规范名称（含“台湾省”），不再由浏览器临时翻译或拼接
+- `name_local`：保存数据源本地名称和 GeoNames 多语言别名；中国 ADM0/ADM1 在导入时补齐中文规范名称（含“台湾省”），不再由浏览器临时翻译或拼接。名称层的增量流程见 [行政区多语言名称](ADMIN_NAME_LOCALIZATION.md)
 - `source_license`、`source_url`：随导入批次保存数据源许可和来源链接，供合规复核和后续更新追溯
 
 ## 首次导入
@@ -122,7 +122,7 @@ npm run check:admin-data -- --country=CHN --require-levels=0,1,2,3
 - `GET /api/admin/areas?parent=<id>&level=3&q=城区`：三级行政区搜索
 - `GET /api/admin/areas/<id>`：单个行政区和边界 GeoJSON
 
-接口只读、同源、使用服务端 Supabase 密钥，浏览器不会再直接访问 CountriesNow 或 Nominatim。页面应按接口返回的 `name_local[lang]`、`name_en` 回退显示；没有本地化名称时应明确显示英文，而不是把不同来源的中英文拼接成一个选项。
+接口只读、同源、使用服务端 Supabase 密钥，浏览器不会再直接访问 CountriesNow 或 Nominatim。页面按接口返回的 `name_local[lang]`、标准国家名称和数据源 `local` 名称显示；只有名称数据完全缺失时才使用必填的 `name_en`，不会把不同来源的中英文拼接成一个选项。
 
 ## 更新与回滚
 

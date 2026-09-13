@@ -1,0 +1,257 @@
+#!/usr/bin/env node
+
+/**
+ * Enrich existing admin_areas rows with multilingual GeoNames aliases.
+ *
+ * Boundary geometry and hierarchy remain owned by the approved boundary
+ * sources. GeoNames is used only as a names layer, so a translation update
+ * never changes an administrative polygon or parent relationship.
+ *
+ * The command is dry-run by default. It needs the small GeoNames admin code
+ * files plus alternateNamesV2.txt (or its zip archive) and a server-only
+ * Supabase key. See docs/ADMIN_NAME_LOCALIZATION.md for the preparation and
+ * review flow.
+ */
+
+import { createReadStream } from 'node:fs';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { createInterface } from 'node:readline';
+import { spawn } from 'node:child_process';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
+const args = new Map(process.argv.slice(2).map((value) => {
+  const match = value.match(/^--([^=]+)=(.*)$/u);
+  return match ? [match[1], match[2]] : [value.replace(/^--/u, ''), 'true'];
+}));
+
+const url = (process.env.SUPABASE_URL || '').replace(/\/$/u, '');
+const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const countryFilter = String(args.get('country') || 'ALL').toUpperCase();
+const languages = new Set(String(args.get('languages') || 'zh,zh-Hans,en,fr,es,de,pt,ru,ja,ko,ar').split(',').map((value) => value.trim()).filter(Boolean));
+const admin1Path = resolve(root, String(args.get('admin1') || '.codex-tmp/geonames/admin1CodesASCII.txt'));
+const admin2Path = resolve(root, String(args.get('admin2') || '.codex-tmp/geonames/admin2Codes.txt'));
+const allCountriesPath = resolve(root, String(args.get('all-countries') || '.codex-tmp/geonames/allCountries.zip'));
+const alternatePath = resolve(root, String(args.get('alternate') || '.codex-tmp/geonames/alternateNamesV2.zip'));
+const outputPath = resolve(root, String(args.get('output') || '.codex-tmp/admin-geonames-name-patch.ndjson'));
+const reportPath = resolve(root, String(args.get('report') || '.codex-tmp/admin-geonames-name-report.json'));
+const apply = args.get('apply') === 'true';
+
+function fail(message) {
+  throw new Error(message);
+}
+
+async function requiredFile(path, label) {
+  try {
+    await access(path, constants.R_OK);
+  } catch {
+    fail(`${label} not found: ${path}`);
+  }
+}
+
+function headers(extra = {}) {
+  return {
+    apikey: key,
+    ...(key.startsWith('sb_') ? {} : { Authorization: `Bearer ${key}` }),
+    Accept: 'application/json',
+    ...extra,
+  };
+}
+
+function normalizeName(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase()
+    .replace(/\b(autonomous|province|municipality|prefecture|county|city|state|region|oblast|district|department|governorate|republic|kingdom)\b/gu, '')
+    .replace(/[^a-z0-9\u3400-\u9fff]+/gu, '');
+}
+
+function parseCodeLine(line, source) {
+  const [code, name, asciiName, id] = line.split('\t');
+  if (!code || !name || !id || !/^\d+$/u.test(id)) return null;
+  const parts = code.split('.');
+  const level = parts.length === 2 ? 1 : parts.length === 3 ? 2 : null;
+  if (!level) return null;
+  const countryIso2 = parts[0].toUpperCase();
+  return {
+    source,
+    code,
+    countryIso2,
+    level,
+    geonameId: id,
+    names: new Set([normalizeName(name), normalizeName(asciiName)]),
+  };
+}
+
+async function readCodeIndex(path, source) {
+  const index = new Map();
+  const text = await readFile(path, 'utf8');
+  for (const line of text.split(/\r?\n/u)) {
+    const entry = parseCodeLine(line, source);
+    if (!entry) continue;
+    for (const name of entry.names) {
+      if (!name) continue;
+      const key = `${entry.countryIso2}:${entry.level}:${name}`;
+      const values = index.get(key) || [];
+      values.push(entry);
+      index.set(key, values);
+    }
+  }
+  return index;
+}
+
+async function readAdm3Index(path) {
+  try {
+    await access(path, constants.R_OK);
+  } catch {
+    return new Map();
+  }
+  const index = new Map();
+  const input = alternateStream(path);
+  const reader = createInterface({ input, crlfDelay: Infinity });
+  for await (const line of reader) {
+    const fields = line.split('\t');
+    const [geonameId, name, asciiName, , , , , featureCode, countryIso2] = fields;
+    if (featureCode !== 'ADM3' || !geonameId || !countryIso2 || !name) continue;
+    const names = new Set([normalizeName(name), normalizeName(asciiName)]);
+    for (const normalized of names) {
+      if (!normalized) continue;
+      const entryKey = `${countryIso2.toUpperCase()}:3:${normalized}`;
+      const values = index.get(entryKey) || [];
+      values.push({ source: 'allCountries', countryIso2: countryIso2.toUpperCase(), level: 3, geonameId, names });
+      index.set(entryKey, values);
+    }
+  }
+  return index;
+}
+
+async function listAdminRows() {
+  if (!url || !key) fail('SUPABASE_URL and a server-only SUPABASE_SECRET_KEY are required');
+  const rows = [];
+  for (let offset = 0; ; offset += 1000) {
+    const scope = countryFilter === 'ALL' ? '' : `&country_iso3=eq.${encodeURIComponent(countryFilter)}`;
+    const response = await fetch(`${url}/rest/v1/admin_areas?select=id,country_iso2,country_iso3,level,name_en,name_local&is_active=eq.true&order=id.asc&limit=1000&offset=${offset}${scope}`, {
+      headers: headers(),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) fail(`Supabase admin directory query failed (${response.status})`);
+    const page = await response.json();
+    if (!Array.isArray(page)) fail('Supabase admin directory query returned a non-list response');
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+  }
+}
+
+function alternateStream(path) {
+  if (/\.zip$/iu.test(path)) {
+    const child = spawn('unzip', ['-p', path, 'alternateNamesV2.txt'], { stdio: ['ignore', 'pipe', 'inherit'] });
+    child.on('error', (error) => fail(`cannot read GeoNames archive: ${error.message}`));
+    return child.stdout;
+  }
+  return createReadStream(path, { encoding: 'utf8' });
+}
+
+async function readAlternates(path, targetIds) {
+  const names = new Map();
+  const input = alternateStream(path);
+  const reader = createInterface({ input, crlfDelay: Infinity });
+  for await (const line of reader) {
+    const [alternateId, geonameId, language, value, preferred, shortName] = line.split('\t');
+    if (!targetIds.has(geonameId) || !languages.has(language) || !value) continue;
+    const languageKey = language === 'zh' ? 'zh' : language;
+    const score = (preferred === '1' ? 0 : 10) + (shortName === '1' ? 0 : 1) + value.length / 10000;
+    const byLanguage = names.get(geonameId) || new Map();
+    const current = byLanguage.get(languageKey);
+    if (!current || score < current.score) byLanguage.set(languageKey, { value, score, alternateId });
+    names.set(geonameId, byLanguage);
+  }
+  return names;
+}
+
+async function applyPatch(patches) {
+  const concurrency = 8;
+  let cursor = 0;
+  async function worker() {
+    while (cursor < patches.length) {
+      const patch = patches[cursor++];
+      const response = await fetch(`${url}/rest/v1/admin_areas?id=eq.${encodeURIComponent(patch.id)}`, {
+        method: 'PATCH',
+        headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
+        body: JSON.stringify({ name_local: patch.name_local }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!response.ok) fail(`GeoNames name patch failed (${response.status}) for ${patch.id}`);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, patches.length) }, () => worker()));
+}
+
+await requiredFile(admin1Path, 'GeoNames admin1CodesASCII.txt');
+await requiredFile(admin2Path, 'GeoNames admin2Codes.txt');
+await requiredFile(alternatePath, 'GeoNames alternateNamesV2.txt or archive');
+const [admin1Index, admin2Index, admin3Index] = await Promise.all([
+  readCodeIndex(admin1Path, 'admin1'),
+  readCodeIndex(admin2Path, 'admin2'),
+  readAdm3Index(allCountriesPath),
+]);
+const rows = await listAdminRows();
+const targetIds = new Set();
+const matches = [];
+const unmatched = [];
+for (const row of rows) {
+  if (![1, 2].includes(Number(row.level)) || !row.country_iso2) continue;
+  const index = Number(row.level) === 1 ? admin1Index : Number(row.level) === 2 ? admin2Index : admin3Index;
+  const keyName = `${String(row.country_iso2).toUpperCase()}:${row.level}:${normalizeName(row.name_en)}`;
+  const candidates = index.get(keyName) || [];
+  if (candidates.length !== 1) {
+    unmatched.push({ id: row.id, level: row.level, name_en: row.name_en, candidates: candidates.length });
+    continue;
+  }
+  targetIds.add(candidates[0].geonameId);
+  matches.push({ row, geonameId: candidates[0].geonameId });
+}
+
+const alternates = await readAlternates(alternatePath, targetIds);
+const patches = [];
+for (const { row, geonameId } of matches) {
+  const aliases = alternates.get(geonameId);
+  if (!aliases?.size) continue;
+  const merged = row.name_local && typeof row.name_local === 'object' ? { ...row.name_local } : {};
+  for (const [language, value] of aliases) {
+    if (!merged[language]) merged[language] = value.value;
+  }
+  if (Object.keys(merged).length > Object.keys(row.name_local || {}).length) {
+    patches.push({ id: row.id, geoname_id: geonameId, name_local: merged });
+  }
+}
+
+await mkdir(resolve(outputPath, '..'), { recursive: true });
+await writeFile(outputPath, `${patches.map((patch) => JSON.stringify(patch)).join('\n')}${patches.length ? '\n' : ''}`);
+const report = {
+  source: 'GeoNames alternateNamesV2',
+  source_url: 'https://download.geonames.org/export/dump/alternateNamesV2.zip',
+  source_license: 'CC BY 4.0; attribution required',
+  country: countryFilter,
+  languages: [...languages],
+  fetched_rows: rows.length,
+  matched_rows: matches.length,
+  all_countries_available: admin3Index.size > 0,
+  patched_rows: patches.length,
+  unmatched_rows: unmatched.length,
+  unmatched_sample: unmatched.slice(0, 100),
+  output: outputPath,
+  applied: apply,
+};
+await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+console.log(`GeoNames name enrichment: ${patches.length} rows ready; ${unmatched.length} rows require review.`);
+console.log(`Patch: ${outputPath}`);
+console.log(`Report: ${reportPath}`);
+if (apply && patches.length) {
+  await applyPatch(patches);
+  console.log(`Applied GeoNames names to ${patches.length} admin rows.`);
+} else if (!apply) {
+  console.log('Dry run only. Review the report and pass --apply to update Supabase.');
+}

@@ -115,10 +115,19 @@ export async function listAdminAreas(query: ReturnType<typeof parseAdminQuery>) 
   if (query.level != null) params.set('level', `eq.${query.level}`);
   if (query.q) {
     const value = encodeFilter(query.q);
-    // Search both the canonical English name and the localized aliases. The
-    // latter keeps Chinese UI searches fully server-side and avoids a browser
-    // dependency on a third-party geocoder.
-    params.set('or', `(name_en.ilike.*${value}*,name_local->>zh-Hans.ilike.*${value}*,name_local->>zh.ilike.*${value}*,name_local->>name:zh.ilike.*${value}*)`);
+    // Search the canonical English name plus every supported localized alias.
+    // This keeps searches server-side while the result label follows the
+    // active UI language in the browser.
+    const localizedKeys = [
+      'zh-Hans', 'zh', 'name:zh',
+      'en', 'name:en',
+      'local', 'name:local',
+      'ar', 'name:ar', 'es', 'name:es', 'fr', 'name:fr',
+      'pt', 'name:pt', 'ru', 'name:ru', 'ja', 'name:ja',
+      'ko', 'name:ko', 'de', 'name:de',
+    ];
+    const aliases = localizedKeys.map((key) => `name_local->>${key}.ilike.*${value}*`);
+    params.set('or', `(name_en.ilike.*${value}*,${aliases.join(',')})`);
   }
   const pageSize = Math.min(query.limit, 1000);
   const rows: Row[] = [];
