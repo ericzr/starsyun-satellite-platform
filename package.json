@@ -22,6 +22,7 @@
     "import:admin:n159": "node scripts/import-n159-admin.mjs",
     "import:admin:patch": "node scripts/import-admin-patch.mjs",
     "enrich:admin:names": "node scripts/enrich-geonames-names.mjs",
+    "enrich:admin:nominatim": "node scripts/enrich-nominatim-names.mjs",
     "inventory:production": "node scripts/production-inventory.mjs",
     "test:admin-data": "node --test scripts/tests/admin-data-validation.test.mjs",
     "test:admin-localization": "node --test scripts/tests/country-iso2.test.mjs",

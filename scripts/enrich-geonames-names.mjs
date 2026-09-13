@@ -112,7 +112,7 @@ async function readCodeIndex(path, source) {
   return index;
 }
 
-async function readAdm3Index(path) {
+async function readAllCountriesAdminIndex(path) {
   try {
     await access(path, constants.R_OK);
   } catch {
@@ -123,14 +123,15 @@ async function readAdm3Index(path) {
   const reader = createInterface({ input, crlfDelay: Infinity });
   for await (const line of reader) {
     const fields = line.split('\t');
-    const [geonameId, name, asciiName, , , , , featureCode, countryIso2] = fields;
-    if (featureCode !== 'ADM3' || !geonameId || !countryIso2 || !name) continue;
+    const [geonameId, name, asciiName, , , , featureClass, featureCode, countryIso2] = fields;
+    if (featureClass !== 'A' || !/^ADM[1-4]$/u.test(featureCode || '') || !geonameId || !countryIso2 || !name) continue;
+    const level = Number(featureCode.slice(3));
     const names = new Set([normalizeName(name), normalizeName(asciiName)]);
     for (const normalized of names) {
       if (!normalized) continue;
-      const entryKey = `${countryIso2.toUpperCase()}:3:${normalized}`;
+      const entryKey = `${countryIso2.toUpperCase()}:${level}:${normalized}`;
       const values = index.get(entryKey) || [];
-      values.push({ source: 'allCountries', countryIso2: countryIso2.toUpperCase(), level: 3, geonameId, names });
+      values.push({ source: 'allCountries', countryIso2: countryIso2.toUpperCase(), level, geonameId, names });
       index.set(entryKey, values);
     }
   }
@@ -221,10 +222,10 @@ async function applyPatch(patches) {
 await requiredFile(admin1Path, 'GeoNames admin1CodesASCII.txt');
 await requiredFile(admin2Path, 'GeoNames admin2Codes.txt');
 await requiredFile(alternatePath, 'GeoNames alternateNamesV2.txt or archive');
-const [admin1Index, admin2Index, admin3Index] = await Promise.all([
+const [admin1Index, admin2Index, allCountriesIndex] = await Promise.all([
   readCodeIndex(admin1Path, 'admin1'),
   readCodeIndex(admin2Path, 'admin2'),
-  readAdm3Index(allCountriesPath),
+  readAllCountriesAdminIndex(allCountriesPath),
 ]);
 const iso2ByIso3 = JSON.parse(await readFile(resolve(root, 'src/app/data/country-iso2.json'), 'utf8'));
 const rows = await listAdminRows();
@@ -234,9 +235,22 @@ const unmatched = [];
 for (const row of rows) {
   const countryIso2 = String(row.country_iso2 || iso2ByIso3[String(row.country_iso3 || '').toUpperCase()] || '').toUpperCase();
   if (![1, 2, 3].includes(Number(row.level)) || !countryIso2) continue;
-  const index = Number(row.level) === 1 ? admin1Index : Number(row.level) === 2 ? admin2Index : admin3Index;
+  const level = Number(row.level);
+  const index = level === 1 ? admin1Index : level === 2 ? admin2Index : allCountriesIndex;
   const keyName = `${countryIso2}:${row.level}:${normalizeName(row.name_en)}`;
-  const candidates = index.get(keyName) || [];
+  let candidates = index.get(keyName) || [];
+  // The boundary provider's level can differ from GeoNames for municipalities
+  // and special districts. Only accept a unique all-level fallback match.
+  if (candidates.length !== 1 && allCountriesIndex.size) {
+    candidates = allCountriesIndex.get(keyName) || [];
+    if (candidates.length !== 1) {
+      const normalizedName = normalizeName(row.name_en);
+      const byName = [...allCountriesIndex.entries()]
+        .filter(([key]) => key.startsWith(`${countryIso2}:`) && key.endsWith(`:${normalizedName}`))
+        .flatMap(([, values]) => values);
+      if (byName.length === 1) candidates = byName;
+    }
+  }
   if (candidates.length !== 1) {
     unmatched.push({ id: row.id, level: row.level, name_en: row.name_en, candidates: candidates.length });
     continue;
@@ -271,7 +285,7 @@ const report = {
   retries: retryCount,
   fetched_rows: rows.length,
   matched_rows: matches.length,
-  all_countries_available: admin3Index.size > 0,
+  all_countries_available: allCountriesIndex.size > 0,
   patched_rows: patches.length,
   unmatched_rows: unmatched.length,
   unmatched_sample: unmatched.slice(0, 100),
