@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 /**
  * Import versioned geoBoundaries gbOpen ADM0-ADM3 GeoJSON into Supabase.
  *
@@ -401,19 +404,23 @@ async function loadDataset(meta, iso3, level, iso2) {
 }
 
 async function iso2Map() {
+  const staticIso2 = new Map(Object.entries(JSON.parse(readFileSync(
+    fileURLToPath(new URL('../src/app/data/country-iso2.json', import.meta.url)),
+    'utf8',
+  ))));
   try {
     const payload = await getJson(REST_COUNTRIES_API);
     if (Array.isArray(payload)) {
       const remote = new Map(payload
         .map((country) => [String(country.cca3 || '').toUpperCase(), String(country.cca2 || '').toUpperCase()])
         .filter(([iso3, iso2]) => iso3 && iso2));
-      return new Map([...fallbackIso2, ...remote]);
+      return new Map([...fallbackIso2, ...staticIso2, ...remote]);
     }
-    console.warn('REST Countries returned a non-list response; using fallback ISO2 mappings');
+    console.warn('REST Countries returned a non-list response; using static ISO2 mappings');
   } catch (error) {
-    console.warn(`REST Countries unavailable; using fallback ISO2 mappings: ${error.message}`);
+    console.warn(`REST Countries unavailable; using static ISO2 mappings: ${error.message}`);
   }
-  return fallbackIso2;
+  return new Map([...fallbackIso2, ...staticIso2]);
 }
 
 async function writeBatch(batch) {

@@ -6,4 +6,4 @@ Earth imagery used by the homepage globe is derived from NASA's [Blue Marble: Ne
 
 The homepage cloud overlay uses NASA Earthdata GIBS [MODIS Terra Cloud Fraction Day](https://gibs.earthdata.nasa.gov/) imagery. It is a global daily composite (not a minute-by-minute weather nowcast); the client requests the latest reliably available UTC day and renders it as a lightweight, cached GPU overlay.
 
-Administrative names may be enriched from [GeoNames](https://www.geonames.org/) `alternateNamesV2` under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). GeoNames is used only as a multilingual names layer; administrative boundary geometry and hierarchy remain attributed to their recorded boundary sources.
+Administrative names may be enriched from [GeoNames](https://www.geonames.org/) `alternateNamesV2` and country ISO metadata from [`countryInfo.txt`](https://download.geonames.org/export/dump/countryInfo.txt), under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). GeoNames is used only as a multilingual names layer and ISO fallback; administrative boundary geometry and hierarchy remain attributed to their recorded boundary sources.
