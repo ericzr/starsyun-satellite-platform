@@ -119,12 +119,11 @@ export async function listAdminAreas(query: ReturnType<typeof parseAdminQuery>) 
     // This keeps searches server-side while the result label follows the
     // active UI language in the browser.
     const localizedKeys = [
-      'zh-Hans', 'zh', 'name:zh',
-      'en', 'name:en',
-      'local', 'name:local',
-      'ar', 'name:ar', 'es', 'name:es', 'fr', 'name:fr',
-      'pt', 'name:pt', 'ru', 'name:ru', 'ja', 'name:ja',
-      'ko', 'name:ko', 'de', 'name:de',
+      // PostgREST JSON keys must be plain identifiers in this expression.
+      // OSM-style `name:xx` aliases remain display-only and are not included
+      // here because the colon is parsed as an invalid filter token.
+      'zh-Hans', 'zh', 'en', 'local',
+      'ar', 'es', 'fr', 'pt', 'ru', 'ja', 'ko', 'de',
     ];
     const aliases = localizedKeys.map((key) => `name_local->>${key}.ilike.*${value}*`);
     params.set('or', `(name_en.ilike.*${value}*,${aliases.join(',')})`);
