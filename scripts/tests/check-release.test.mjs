@@ -17,6 +17,7 @@ async function fixture(t, overrides = {}) {
     'dist/assets/app.css': ':root {}',
     'dist-server/server.js': 'export {};',
     'package.json': '{"type":"module"}',
+    'src/app/data/country-iso2.json': '{}',
     'scripts/import-geoboundaries.mjs': '',
     'scripts/check-admin-data.mjs': '',
     ...overrides,

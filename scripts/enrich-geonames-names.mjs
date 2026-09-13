@@ -119,7 +119,7 @@ async function readAllCountriesAdminIndex(path) {
     return new Map();
   }
   const index = new Map();
-  const input = alternateStream(path);
+  const input = allCountriesStream(path);
   const reader = createInterface({ input, crlfDelay: Infinity });
   for await (const line of reader) {
     const fields = line.split('\t');
@@ -155,13 +155,21 @@ async function listAdminRows() {
   }
 }
 
-function alternateStream(path) {
+function archiveStream(path, member) {
   if (/\.zip$/iu.test(path)) {
-    const child = spawn('unzip', ['-p', path, 'alternateNamesV2.txt'], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const child = spawn('unzip', ['-p', path, member], { stdio: ['ignore', 'pipe', 'inherit'] });
     child.on('error', (error) => fail(`cannot read GeoNames archive: ${error.message}`));
     return child.stdout;
   }
   return createReadStream(path, { encoding: 'utf8' });
+}
+
+function alternateStream(path) {
+  return archiveStream(path, 'alternateNamesV2.txt');
+}
+
+function allCountriesStream(path) {
+  return archiveStream(path, 'allCountries.txt');
 }
 
 async function readAlternates(path, targetIds) {
