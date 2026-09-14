@@ -218,15 +218,6 @@ export function FilterPanel({
             ))}
           </SelectContent>
         </Select>
-        <p className="text-[10px] text-muted-foreground">
-          {category === 'all'
-            ? lang === 'zh'
-              ? '浏览全部产品类型'
-              : 'Browse every product type'
-            : lang === 'zh'
-              ? `已按${categoryLabels[category as ProductCategory].zh}筛选`
-              : `Filtering ${categoryLabels[category as ProductCategory].en.toLowerCase()}`}
-        </p>
       </div>
 
       {/* Shared imagery conditions. These remain available for archive and tasking. */}
@@ -310,11 +301,6 @@ export function FilterPanel({
               />
             </div>
           </div>
-          <p className="text-[10px] text-muted-foreground">
-            {lang === 'zh'
-              ? '同一天表示单日查询，留空表示不限时间'
-              : 'Use the same date for a single-day search; leave blank for any date'}
-          </p>
         </div>
 
         {/* Resolution */}
