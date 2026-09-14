@@ -35,7 +35,8 @@ function checkGlobalBudget() {
   const now = Date.now();
   if (now - globalWindow.startedAt >= RATE_WINDOW_MS) globalWindow = { startedAt: now, count: 0 };
   globalWindow.count += 1;
-  if (globalWindow.count > globalRateLimit()) throw new GatewayError(429, 'provider request budget exceeded');
+  if (globalWindow.count > globalRateLimit())
+    throw new GatewayError(429, 'provider request budget exceeded');
 }
 
 export class GatewayError extends Error {
@@ -74,14 +75,19 @@ function validateDatetime(value: unknown) {
 
 function validateCollection(value: unknown) {
   if (value == null) return COLLECTIONS.sentinel2;
-  if (typeof value !== 'string' || !Object.values(COLLECTIONS).includes(value as (typeof COLLECTIONS)[keyof typeof COLLECTIONS])) {
+  if (
+    typeof value !== 'string' ||
+    !Object.values(COLLECTIONS).includes(value as (typeof COLLECTIONS)[keyof typeof COLLECTIONS])
+  ) {
     throw new GatewayError(400, 'collection is not enabled');
   }
   return value;
 }
 
 export function parseSearchRequest(body: StacRequest) {
-  const collection = validateCollection(Array.isArray(body.collections) ? body.collections[0] : body.collections);
+  const collection = validateCollection(
+    Array.isArray(body.collections) ? body.collections[0] : body.collections,
+  );
   const bbox = validateBbox(body.bbox);
   const datetime = validateDatetime(body.datetime);
   const cloudCoverMax = body.cloudCoverMax == null ? undefined : asNumber(body.cloudCoverMax);
@@ -117,6 +123,22 @@ function cacheKey(input: ReturnType<typeof parseSearchRequest>) {
   return JSON.stringify(input);
 }
 
+function incidenceAngle(item: unknown): number | null {
+  const properties = (item as { properties?: Record<string, unknown> } | null)?.properties;
+  if (!properties) return null;
+  for (const key of [
+    'view:incidence_angle',
+    'view:off_nadir',
+    'sar:incidence_angle',
+    'incidence',
+    'incidenceAngle',
+  ]) {
+    const value = properties[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
 export async function searchEarthSearch(input: ReturnType<typeof parseSearchRequest>) {
   const key = cacheKey(input);
   if (cache.size > 1_000) {
@@ -143,10 +165,9 @@ export async function searchEarthSearch(input: ReturnType<typeof parseSearchRequ
         limit: input.limit,
       };
       if (input.datetime) query.datetime = input.datetime;
-      if (input.cloudCoverMax != null || input.offNadirMax != null) {
+      if (input.cloudCoverMax != null) {
         query.query = {
-          ...(input.cloudCoverMax != null ? { 'eo:cloud_cover': { lte: input.cloudCoverMax } } : {}),
-          ...(input.offNadirMax != null ? { 'view:incidence_angle': { lte: input.offNadirMax } } : {}),
+          'eo:cloud_cover': { lte: input.cloudCoverMax },
         };
       }
 
@@ -157,7 +178,13 @@ export async function searchEarthSearch(input: ReturnType<typeof parseSearchRequ
         signal: controller.signal,
       });
       if (!response.ok) throw new GatewayError(502, `provider returned ${response.status}`);
-      const payload = await response.json();
+      const payload = (await response.json()) as { features?: unknown[] };
+      if (input.offNadirMax != null && Array.isArray(payload.features)) {
+        payload.features = payload.features.filter((item) => {
+          const angle = incidenceAngle(item);
+          return angle == null || angle <= input.offNadirMax!;
+        });
+      }
       cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
       return payload;
     } catch (error) {
@@ -180,10 +207,13 @@ export async function getEarthSearchItem(id: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
-    const response = await fetch(`${EARTH_SEARCH_BASE}/collections/${COLLECTIONS.sentinel2}/items/${encodeURIComponent(id)}`, {
-      headers: { accept: 'application/geo+json' },
-      signal: controller.signal,
-    });
+    const response = await fetch(
+      `${EARTH_SEARCH_BASE}/collections/${COLLECTIONS.sentinel2}/items/${encodeURIComponent(id)}`,
+      {
+        headers: { accept: 'application/geo+json' },
+        signal: controller.signal,
+      },
+    );
     if (response.status === 404) throw new GatewayError(404, 'provider item not found');
     if (!response.ok) throw new GatewayError(502, `provider returned ${response.status}`);
     return response.json();

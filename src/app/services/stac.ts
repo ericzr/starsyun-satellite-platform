@@ -4,7 +4,10 @@ import { bboxAreaKm2, splitBBox } from '../lib/geo';
 
 const EARTH_SEARCH_URL = 'https://earth-search.aws.element84.com/v1/search';
 const EARTH_SEARCH_COLLECTION = 'sentinel-2-l2a';
-const STAC_GATEWAY_URL = (import.meta.env.VITE_STAC_GATEWAY_URL as string | undefined)?.replace(/\/$/, '');
+const STAC_GATEWAY_URL = (import.meta.env.VITE_STAC_GATEWAY_URL as string | undefined)?.replace(
+  /\/$/,
+  '',
+);
 
 type StacLink = { rel?: string; href?: string };
 type StacAsset = { href?: string; roles?: string[]; type?: string };
@@ -51,7 +54,12 @@ function itemBbox(item: StacItem): BBox | null {
   if (!points.length) return null;
   const longitudes = points.map(([lng]) => lng);
   const latitudes = points.map(([, lat]) => lat);
-  return [Math.min(...longitudes), Math.min(...latitudes), Math.max(...longitudes), Math.max(...latitudes)];
+  return [
+    Math.min(...longitudes),
+    Math.min(...latitudes),
+    Math.max(...longitudes),
+    Math.max(...latitudes),
+  ];
 }
 
 function link(item: StacItem, rel: string) {
@@ -74,11 +82,11 @@ function numberValue(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function firstNumberValue(values: unknown[], fallback: number) {
+function firstNumberValue(values: unknown[]): number | null {
   for (const value of values) {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
   }
-  return fallback;
+  return null;
 }
 
 function normalizeItem(item: StacItem, index: number): Product | null {
@@ -90,16 +98,13 @@ function normalizeItem(item: StacItem, index: number): Product | null {
   const sunElevation = numberValue(properties['view:sun_elevation'], 0);
   // STAC providers use different names for viewing/incidence angle. Keep the
   // canonical Product field populated whenever a provider exposes one.
-  const incidence = firstNumberValue(
-    [
-      properties['view:incidence_angle'],
-      properties['view:off_nadir'],
-      properties['sar:incidence_angle'],
-      properties.incidence,
-      properties.incidenceAngle,
-    ],
-    0,
-  );
+  const incidence = firstNumberValue([
+    properties['view:incidence_angle'],
+    properties['view:off_nadir'],
+    properties['sar:incidence_angle'],
+    properties.incidence,
+    properties.incidenceAngle,
+  ]);
   const epsg = numberValue(properties['proj:epsg'], 4326);
   const id = `earth-search-${item.id}`;
   const thumbnail = publicUrl(asset(item, 'thumbnail') ?? link(item, 'thumbnail'));
@@ -136,7 +141,7 @@ function normalizeItem(item: StacItem, index: number): Product | null {
     status: 'instant',
     category: 'archive',
     bands: '13 bands',
-    incidence: Math.round(incidence * 10) / 10,
+    incidence: incidence == null ? null : Math.round(incidence * 10) / 10,
     sunElevation,
     regionId: 'open-data',
     thumbnail,
@@ -144,7 +149,8 @@ function normalizeItem(item: StacItem, index: number): Product | null {
     purchaseType: 'instant',
     instantDelivery: true,
     deliveryDays: 0,
-    availableServices: index % 2 === 0 ? ['change-detection', 'land-cover', 'time-series'] : ['land-cover'],
+    availableServices:
+      index % 2 === 0 ? ['change-detection', 'land-cover', 'time-series'] : ['land-cover'],
   };
 }
 
@@ -166,12 +172,6 @@ async function searchEarthSearchBox(input: EarthSearchInput, bbox: BBox): Promis
   if (!STAC_GATEWAY_URL && input.cloudCoverMax != null) {
     body.query = { 'eo:cloud_cover': { lte: input.cloudCoverMax } };
   }
-  if (!STAC_GATEWAY_URL && input.offNadirMax != null) {
-    body.query = {
-      ...(typeof body.query === 'object' && body.query ? body.query : {}),
-      'view:incidence_angle': { lte: input.offNadirMax },
-    };
-  }
 
   const response = await fetch(STAC_GATEWAY_URL ? `${STAC_GATEWAY_URL}/search` : EARTH_SEARCH_URL, {
     method: 'POST',
@@ -187,7 +187,9 @@ async function searchEarthSearchBox(input: EarthSearchInput, bbox: BBox): Promis
 export async function searchEarthSearch(input: EarthSearchInput): Promise<Product[]> {
   // A rectangle crossing +/-180 is represented as an unwrapped bbox by the
   // map so area calculations stay narrow. Query each legal half separately.
-  const features = (await Promise.all(splitBBox(input.bbox).map((bbox) => searchEarthSearchBox(input, bbox))))
+  const features = (
+    await Promise.all(splitBBox(input.bbox).map((bbox) => searchEarthSearchBox(input, bbox)))
+  )
     .flat()
     .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index);
   const products = features

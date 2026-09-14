@@ -1,10 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Search, Square, Trash2, GitCompare, Crosshair, SlidersHorizontal, List, Upload, MapPinned, ChevronDown, X } from 'lucide-react';
+import {
+  Search,
+  Square,
+  Trash2,
+  GitCompare,
+  Crosshair,
+  SlidersHorizontal,
+  List,
+  Upload,
+  MapPinned,
+  ChevronDown,
+  X,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 import { useI18n } from '../i18n';
 import { PRODUCTS, REGIONS, type Product } from '../data/products';
-import { coverageRatio, intersects, bboxAreaKm2, geometryAreaKm2, fmtArea, parseCoords, parseVectorFile, type BBox } from '../lib/geo';
+import {
+  coverageRatio,
+  intersects,
+  bboxAreaKm2,
+  geometryAreaKm2,
+  fmtArea,
+  parseCoords,
+  parseVectorFile,
+  type BBox,
+} from '../lib/geo';
 import { MapCanvas, type Footprint } from '../components/MapCanvas';
 import { FilterPanel, DEFAULT_FILTERS, type Filters } from '../components/FilterPanel';
 import { ResultCard } from '../components/ResultCard';
@@ -16,7 +37,17 @@ import { useInquiryDraft } from '../context/InquiryContext';
 import { useCart } from '../context/CartContext';
 import { searchEarthSearch } from '../services/stac';
 import { fetchCatalogProducts } from '../services/catalog';
-import { fetchGlobalCities, fetchGlobalCountries, fetchGlobalDistricts, fetchGlobalStates, getGlobalAdminArea, searchGlobalAdminAreas, type GlobalCity, type GlobalCountry, type GlobalState } from '../services/admin';
+import {
+  fetchGlobalCities,
+  fetchGlobalCountries,
+  fetchGlobalDistricts,
+  fetchGlobalStates,
+  getGlobalAdminArea,
+  searchGlobalAdminAreas,
+  type GlobalCity,
+  type GlobalCountry,
+  type GlobalState,
+} from '../services/admin';
 import { toast } from 'sonner';
 
 function countryLabel(country: GlobalCountry) {
@@ -41,23 +72,27 @@ function matchRegion(q: string) {
     { region, value: region.name.toLowerCase() },
     { region, value: region.nameEn.toLowerCase() },
   ]);
-  return candidates
-    .map(({ region, value }) => ({
-      region,
-      score: value === s
-        ? 0
-        : value.startsWith(s)
-          ? 1
-          : value.includes(s)
-            ? 2
-            : compactQuery.includes(compact(value))
-              ? 3
-              : compact(value).includes(compactQuery)
-                ? 4
-                : 99,
-    }))
-    .filter((candidate) => candidate.score < 99)
-    .sort((a, b) => a.score - b.score || a.region.name.length - b.region.name.length)[0]?.region ?? null;
+  return (
+    candidates
+      .map(({ region, value }) => ({
+        region,
+        score:
+          value === s
+            ? 0
+            : value.startsWith(s)
+              ? 1
+              : value.includes(s)
+                ? 2
+                : compactQuery.includes(compact(value))
+                  ? 3
+                  : compact(value).includes(compactQuery)
+                    ? 4
+                    : 99,
+      }))
+      .filter((candidate) => candidate.score < 99)
+      .sort((a, b) => a.score - b.score || a.region.name.length - b.region.name.length)[0]
+      ?.region ?? null
+  );
 }
 
 type CategoryQuery = 'archive' | 'latest' | 'tasking' | 'sar' | 'dem' | 'analysis';
@@ -153,13 +188,19 @@ export function Explore() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [regionId, setRegionId] = useState<string | null>(null);
   const [aoi, setAoi] = useState<BBox | null>(null);
-  const [boundary, setBoundary] = useState<GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null>(null);
+  const [boundary, setBoundary] = useState<GeoJSON.Feature<
+    GeoJSON.Polygon | GeoJSON.MultiPolygon
+  > | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
-  const [focus, setFocus] = useState<{ center: [number, number]; zoom: number; key: number } | null>(null);
+  const [focus, setFocus] = useState<{
+    center: [number, number];
+    zoom: number;
+    key: number;
+  } | null>(null);
   const focusKey = useRef(0);
   const [filterOpen, setFilterOpen] = useState(false);
   const [resultOpen, setResultOpen] = useState(false);
@@ -192,7 +233,9 @@ export function Explore() {
       .finally(() => {
         if (!cancelled) setCatalogLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -325,7 +368,11 @@ export function Explore() {
       // Keep the user-facing error concise; the server logs the upstream cause.
     }
     if (requestId === searchRequestRef.current) {
-      toast.error(lang === 'zh' ? '未找到该地点，请输入城市、行政区或经纬度' : 'Place not found. Enter a city, administrative area, or coordinates.');
+      toast.error(
+        lang === 'zh'
+          ? '未找到该地点，请输入城市、行政区或经纬度'
+          : 'Place not found. Enter a city, administrative area, or coordinates.',
+      );
     }
   }
 
@@ -334,7 +381,11 @@ export function Explore() {
     const area = await getGlobalAdminArea(id, adminLang).catch(() => null);
     if (requestId !== adminGeoRequestRef.current || !area) return;
     if (!Number.isFinite(area.lat) || !Number.isFinite(area.lon)) {
-      toast.error(lang === 'zh' ? '该行政区缺少可用边界数据' : 'This administrative area has no usable boundary data.');
+      toast.error(
+        lang === 'zh'
+          ? '该行政区缺少可用边界数据'
+          : 'This administrative area has no usable boundary data.',
+      );
       return;
     }
     const bbox = area.bbox ?? pointSearchBbox([area.lon, area.lat]);
@@ -343,7 +394,11 @@ export function Explore() {
     setSearch(area.name);
     setBoundary(area.boundary ?? null);
     setAoi(bbox);
-    setFocus({ center: [area.lon, area.lat], zoom: area.boundary ? [3, 5, 7, 9][level] : 10, key: focusKey.current });
+    setFocus({
+      center: [area.lon, area.lat],
+      zoom: area.boundary ? [3, 5, 7, 9][level] : 10,
+      key: focusKey.current,
+    });
     setRemoteBbox(bbox);
   }
 
@@ -488,7 +543,8 @@ export function Explore() {
     if (!file) return;
     try {
       const bbox = await parseVectorFile(file);
-      if (bbox[2] - bbox[0] < 0.0001 || bbox[3] - bbox[1] < 0.0001) throw new Error('Vector extent is too small');
+      if (bbox[2] - bbox[0] < 0.0001 || bbox[3] - bbox[1] < 0.0001)
+        throw new Error('Vector extent is too small');
       focusKey.current += 1;
       setVectorName(file.name);
       setAoi(bbox);
@@ -502,10 +558,20 @@ export function Explore() {
       setGlobalCities([]);
       setGlobalDistricts([]);
       setRemoteBbox(bbox);
-      setFocus({ center: [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], zoom: 10, key: focusKey.current });
+      setFocus({
+        center: [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2],
+        zoom: 10,
+        key: focusKey.current,
+      });
       toast.success(lang === 'zh' ? `已加载 ${file.name}` : `${file.name} loaded`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : lang === 'zh' ? '矢量文件解析失败' : 'Could not read vector file');
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : lang === 'zh'
+            ? '矢量文件解析失败'
+            : 'Could not read vector file',
+      );
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -517,103 +583,266 @@ export function Explore() {
     return (
       <div className="mt-3 space-y-3 border-t border-border pt-3">
         <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-input-background p-1">
-          {([
-            ['admin', MapPinned, t.explore.adminRegion],
-            ['vector', Upload, t.explore.uploadVector],
-          ] as const).map(([mode, Icon, label]) => (
+          {(
+            [
+              ['admin', MapPinned, t.explore.adminRegion],
+              ['vector', Upload, t.explore.uploadVector],
+            ] as const
+          ).map(([mode, Icon, label]) => (
             <button
               key={mode}
               type="button"
               className={`flex h-9 min-w-0 items-center justify-center gap-1.5 rounded px-2 text-xs transition-colors ${selectionMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
               onClick={() => {
                 if (selectionMode === mode) setAreaSelectorOpen((open) => !open);
-                else { setSelectionMode(mode); setAreaSelectorOpen(true); }
+                else {
+                  setSelectionMode(mode);
+                  setAreaSelectorOpen(true);
+                }
               }}
               title={label}
               aria-expanded={selectionMode === mode ? areaSelectorOpen : undefined}
             >
               <Icon className="size-3.5 shrink-0" />
               <span className="truncate">{label}</span>
-              {selectionMode === mode && <ChevronDown className={`size-3 shrink-0 transition-transform ${areaSelectorOpen ? 'rotate-180' : ''}`} />}
+              {selectionMode === mode && (
+                <ChevronDown
+                  className={`size-3 shrink-0 transition-transform ${areaSelectorOpen ? 'rotate-180' : ''}`}
+                />
+              )}
             </button>
           ))}
         </div>
         {selectionMode === 'admin' && areaSelectorOpen && (
           <div className="space-y-2">
             <label className="block space-y-1">
-              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.country}</span>{adminCountry && <button type="button" aria-label={lang === 'zh' ? '清除国家或地区' : 'Clear country or region'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminCountry(); }}><X className="size-3" /></button>}</span>
+              <span className="flex items-center justify-between">
+                <span className="tech-label text-[9px] text-muted-foreground">
+                  {t.explore.country}
+                </span>
+                {adminCountry && (
+                  <button
+                    type="button"
+                    aria-label={lang === 'zh' ? '清除国家或地区' : 'Clear country or region'}
+                    className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      clearAdminCountry();
+                    }}
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </span>
               <div className="relative">
                 <select
                   value={adminCountry}
                   onChange={(event) => {
-                    if (!event.target.value) { clearAdminCountry(); return; }
+                    if (!event.target.value) {
+                      clearAdminCountry();
+                      return;
+                    }
                     selectGlobalCountry(event.target.value);
                   }}
                   className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
                 >
                   <option value="">{t.explore.countryPlaceholder}</option>
-                  {globalCountries.map((country) => <option key={country.id} value={country.id}>{countryLabel(country)}</option>)}
+                  {globalCountries.map((country) => (
+                    <option key={country.id} value={country.id}>
+                      {countryLabel(country)}
+                    </option>
+                  ))}
                 </select>
-                <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+                <ChevronDown
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
+                />
               </div>
             </label>
-            {adminCountry && <label className="block space-y-1">
-              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel1}</span>{adminLevel1 && <button type="button" aria-label={lang === 'zh' ? '清除一级行政区' : 'Clear first-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel1(); }}><X className="size-3" /></button>}</span>
-              <div className="relative"><select
-                value={adminLevel1}
-                disabled={!selectedGlobalCountry}
-                onChange={(event) => {
-                  if (!event.target.value) { clearAdminLevel1(); return; }
-                  void selectGlobalState(event.target.value);
-                }}
-                className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">{t.explore.adminLevel1Placeholder}</option>
-                {globalStates.map((area) => <option key={area.id} value={area.id}>{stateLabel(area)}</option>)}
-              </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
-            </label>}
-            {adminCountry && adminLevel1 && <label className="block space-y-1">
-              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel2}</span>{adminLevel2 && <button type="button" aria-label={lang === 'zh' ? '清除二级行政区' : 'Clear second-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel2(); }}><X className="size-3" /></button>}</span>
-              <div className="relative"><select
-                value={adminLevel2}
-                disabled={!selectedLevel1}
-                onChange={(event) => {
-                  if (!event.target.value) { clearAdminLevel2(); return; }
-                  setAdminLevel2(event.target.value);
-                  setAdminLevel3('');
-                  setGlobalDistricts([]);
-                  const city = globalCities.find((item) => item.id === event.target.value);
-                  if (city) void selectGlobalCity(city);
-                }}
-                className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">{adminLoading ? (lang === 'zh' ? '加载城市中…' : 'Loading cities…') : t.explore.adminLevel2Placeholder}</option>
-                {globalCities.map((city) => <option key={city.id} value={city.id}>{cityLabel(city)}</option>)}
-              </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
-            </label>}
-            {adminCountry && adminLevel1 && adminLevel2 && (adminLoading || globalDistricts.length > 0) && <label className="block space-y-1">
-              <span className="flex items-center justify-between"><span className="tech-label text-[9px] text-muted-foreground">{t.explore.adminLevel3}</span><button type="button" aria-label={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'} title={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => { event.preventDefault(); clearAdminLevel3(); }}><X className="size-3" /></button></span>
-              <div className="relative"><select
-                value={adminLevel3}
-                disabled={!adminLevel2}
-                onChange={(event) => {
-                  if (!event.target.value) { clearAdminLevel3(); return; }
-                  const district = globalDistricts.find((item) => item.id === event.target.value);
-                  setAdminLevel3(event.target.value);
-                  if (district) void selectGlobalCity(district, 'district');
-                }}
-                className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">{adminLoading ? (lang === 'zh' ? '加载三级行政区中…' : 'Loading third-level areas…') : t.explore.adminLevel3Placeholder}</option>
-                {globalDistricts.map((district) => <option key={district.id} value={district.id}>{cityLabel(district)}</option>)}
-              </select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></div>
-            </label>}
+            {adminCountry && (
+              <label className="block space-y-1">
+                <span className="flex items-center justify-between">
+                  <span className="tech-label text-[9px] text-muted-foreground">
+                    {t.explore.adminLevel1}
+                  </span>
+                  {adminLevel1 && (
+                    <button
+                      type="button"
+                      aria-label={lang === 'zh' ? '清除一级行政区' : 'Clear first-level area'}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        clearAdminLevel1();
+                      }}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </span>
+                <div className="relative">
+                  <select
+                    value={adminLevel1}
+                    disabled={!selectedGlobalCountry}
+                    onChange={(event) => {
+                      if (!event.target.value) {
+                        clearAdminLevel1();
+                        return;
+                      }
+                      void selectGlobalState(event.target.value);
+                    }}
+                    className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">{t.explore.adminLevel1Placeholder}</option>
+                    {globalStates.map((area) => (
+                      <option key={area.id} value={area.id}>
+                        {stateLabel(area)}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
+                  />
+                </div>
+              </label>
+            )}
+            {adminCountry && adminLevel1 && (
+              <label className="block space-y-1">
+                <span className="flex items-center justify-between">
+                  <span className="tech-label text-[9px] text-muted-foreground">
+                    {t.explore.adminLevel2}
+                  </span>
+                  {adminLevel2 && (
+                    <button
+                      type="button"
+                      aria-label={lang === 'zh' ? '清除二级行政区' : 'Clear second-level area'}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        clearAdminLevel2();
+                      }}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </span>
+                <div className="relative">
+                  <select
+                    value={adminLevel2}
+                    disabled={!selectedLevel1}
+                    onChange={(event) => {
+                      if (!event.target.value) {
+                        clearAdminLevel2();
+                        return;
+                      }
+                      setAdminLevel2(event.target.value);
+                      setAdminLevel3('');
+                      setGlobalDistricts([]);
+                      const city = globalCities.find((item) => item.id === event.target.value);
+                      if (city) void selectGlobalCity(city);
+                    }}
+                    className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">
+                      {adminLoading
+                        ? lang === 'zh'
+                          ? '加载城市中…'
+                          : 'Loading cities…'
+                        : t.explore.adminLevel2Placeholder}
+                    </option>
+                    {globalCities.map((city) => (
+                      <option key={city.id} value={city.id}>
+                        {cityLabel(city)}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
+                  />
+                </div>
+              </label>
+            )}
+            {adminCountry &&
+              adminLevel1 &&
+              adminLevel2 &&
+              (adminLoading || globalDistricts.length > 0) && (
+                <label className="block space-y-1">
+                  <span className="flex items-center justify-between">
+                    <span className="tech-label text-[9px] text-muted-foreground">
+                      {t.explore.adminLevel3}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'}
+                      title={lang === 'zh' ? '清除三级行政区' : 'Clear third-level area'}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        clearAdminLevel3();
+                      }}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                  <div className="relative">
+                    <select
+                      value={adminLevel3}
+                      disabled={!adminLevel2}
+                      onChange={(event) => {
+                        if (!event.target.value) {
+                          clearAdminLevel3();
+                          return;
+                        }
+                        const district = globalDistricts.find(
+                          (item) => item.id === event.target.value,
+                        );
+                        setAdminLevel3(event.target.value);
+                        if (district) void selectGlobalCity(district, 'district');
+                      }}
+                      className="h-8 w-full appearance-none rounded-md border border-border bg-input-background py-0 pl-2 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="">
+                        {adminLoading
+                          ? lang === 'zh'
+                            ? '加载三级行政区中…'
+                            : 'Loading third-level areas…'
+                          : t.explore.adminLevel3Placeholder}
+                      </option>
+                      {globalDistricts.map((district) => (
+                        <option key={district.id} value={district.id}>
+                          {cityLabel(district)}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
+                    />
+                  </div>
+                </label>
+              )}
           </div>
         )}
         {selectionMode === 'vector' && areaSelectorOpen && (
           <div>
-            <input ref={fileInputRef} type="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" className="hidden" onChange={(event) => handleVectorFile(event.target.files?.[0])} />
-            <Button type="button" variant="outline" size="sm" className="h-8 w-full text-xs" onClick={() => fileInputRef.current?.click()}><Upload className="size-3.5" />{vectorName || t.explore.uploadVectorHint}</Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz"
+              className="hidden"
+              onChange={(event) => handleVectorFile(event.target.files?.[0])}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 w-full text-xs"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="size-3.5" />
+              {vectorName || t.explore.uploadVectorHint}
+            </Button>
             <p className="mt-1 text-[10px] text-muted-foreground">{t.explore.uploadVectorDesc}</p>
           </div>
         )}
@@ -623,9 +852,12 @@ export function Explore() {
 
   // Query public Sentinel-2 STAC data for an explicit region/AOI.
   useEffect(() => {
-    if (!remoteBbox) {
+    const canQueryArchiveSource =
+      filters.categories.length === 0 || filters.categories.includes('archive');
+    if (!remoteBbox || !canQueryArchiveSource) {
       setRemoteProducts(null);
       setRemoteError(false);
+      setRemoteLoading(false);
       return;
     }
     let cancelled = false;
@@ -656,18 +888,30 @@ export function Explore() {
   }, [remoteBbox, filters]);
 
   // Filtered results
-  const sourceProducts = useMemo(
-    () => remoteProducts ?? (catalogProducts && catalogProducts.length > 0 ? catalogProducts : demoDataEnabled ? PRODUCTS : []),
-    [catalogProducts, demoDataEnabled, remoteProducts],
-  );
+  const sourceProducts = useMemo(() => {
+    const catalog =
+      catalogProducts && catalogProducts.length > 0
+        ? catalogProducts
+        : demoDataEnabled
+          ? PRODUCTS
+          : [];
+    if (!remoteProducts) return catalog;
+    const remoteIds = new Set(remoteProducts.map((product) => product.id));
+    return [...remoteProducts, ...catalog.filter((product) => !remoteIds.has(product.id))];
+  }, [catalogProducts, demoDataEnabled, remoteProducts]);
   const isRemote = remoteProducts !== null;
-  const isDemoProducts = remoteProducts === null && demoDataEnabled && (!catalogProducts || catalogProducts.length === 0);
+  const isDemoProducts =
+    remoteProducts === null &&
+    demoDataEnabled &&
+    (!catalogProducts || catalogProducts.length === 0);
   const results = useMemo(() => {
     let list: Product[] = sourceProducts;
     if (isDemoProducts && regionId) list = list.filter((p) => p.regionId === regionId);
     if (aoi) list = list.filter((p) => intersects(aoi, p.bbox));
-    if (filters.categories.length) list = list.filter((p) => filters.categories.includes(p.category));
-    if (filters.processingLevels.length) list = list.filter((p) => filters.processingLevels.includes(p.processingLevel));
+    if (filters.categories.length)
+      list = list.filter((p) => filters.categories.includes(p.category));
+    if (filters.processingLevels.length)
+      list = list.filter((p) => filters.processingLevels.includes(p.processingLevel));
     if (filters.dataTypes.length) list = list.filter((p) => filters.dataTypes.includes(p.dataType));
 
     // 分辨率筛选
@@ -683,7 +927,16 @@ export function Explore() {
     }
 
     if (filters.cloudMax < 100) list = list.filter((p) => p.cloudCover <= filters.cloudMax);
-    if (filters.offNadirMax < 60) list = list.filter((p) => p.incidence <= filters.offNadirMax);
+    if (filters.offNadirMax < 60)
+      list = list.filter((p) => p.incidence == null || p.incidence <= filters.offNadirMax);
+    if (filters.deliveryMode === 'instant') list = list.filter((p) => p.purchaseType === 'instant');
+    if (filters.deliveryMode === 'inquiry') list = list.filter((p) => p.purchaseType === 'inquiry');
+    if (filters.deliveryMaxDays !== undefined) {
+      list = list.filter((p) => p.deliveryDays <= filters.deliveryMaxDays!);
+    }
+    if (filters.analysisService) {
+      list = list.filter((p) => p.availableServices?.includes(filters.analysisService!));
+    }
 
     // 时间筛选
     if (filters.dateStart || filters.dateEnd) {
@@ -729,9 +982,16 @@ export function Explore() {
       type: 'history',
       productId: p.id,
       productName: lang === 'zh' ? p.productName : p.productNameEn,
-      region: regionId ? (lang === 'zh' ? REGIONS.find((r) => r.id === regionId)?.name : REGIONS.find((r) => r.id === regionId)?.nameEn) : undefined,
+      region: regionId
+        ? lang === 'zh'
+          ? REGIONS.find((r) => r.id === regionId)?.name
+          : REGIONS.find((r) => r.id === regionId)?.nameEn
+        : undefined,
       areaKm2: aoi ? Math.round(areaKm2) : p.area,
-      refPrice: p.priceType === 'inquiry' ? 0 : Math.round(Math.max(aoi ? areaKm2 : p.area, p.minArea) * p.unitPrice),
+      refPrice:
+        p.priceType === 'inquiry'
+          ? 0
+          : Math.round(Math.max(aoi ? areaKm2 : p.area, p.minArea) * p.unitPrice),
       expectRes: `≤ ${p.resolution}m`,
     });
     navigate('/inquiry/new');
@@ -849,13 +1109,19 @@ export function Explore() {
             <Button
               variant={drawing ? 'default' : 'outline'}
               size="sm"
-              className={drawing ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-card/90 backdrop-blur'}
+              className={
+                drawing
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  : 'bg-card/90 backdrop-blur'
+              }
               onClick={() => {
                 setDrawing((d) => !d);
               }}
             >
               <Square className="size-3.5" />
-              <span className="hidden sm:inline">{drawing ? t.explore.drawing : t.explore.drawRect}</span>
+              <span className="hidden sm:inline">
+                {drawing ? t.explore.drawing : t.explore.drawRect}
+              </span>
             </Button>
             {aoi && (
               <Button
@@ -901,9 +1167,14 @@ export function Explore() {
         {/* AOI readout */}
         {aoi && (
           <div className="pointer-events-none absolute bottom-2 left-2 rounded-md border border-border bg-card/90 px-2 py-1.5 backdrop-blur sm:bottom-3 sm:left-3 sm:px-3 sm:py-2">
-            <div className="tech-label text-[9px] text-muted-foreground sm:text-[10px]">{t.explore.targetArea}</div>
+            <div className="tech-label text-[9px] text-muted-foreground sm:text-[10px]">
+              {t.explore.targetArea}
+            </div>
             <div className="font-mono text-base text-primary sm:text-lg">
-              {fmtArea(areaKm2)} <span className="text-xs text-muted-foreground sm:text-sm">{lang === 'zh' ? 'km²' : 'km²'}</span>
+              {fmtArea(areaKm2)}{' '}
+              <span className="text-xs text-muted-foreground sm:text-sm">
+                {lang === 'zh' ? 'km²' : 'km²'}
+              </span>
             </div>
             <div className="font-mono text-[9px] text-muted-foreground sm:text-[10px]">
               {aoi[1].toFixed(5)}, {aoi[0].toFixed(5)} → {aoi[3].toFixed(5)}, {aoi[2].toFixed(5)}
@@ -916,7 +1187,9 @@ export function Explore() {
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 sm:bottom-3">
             <Button className="shadow-lg" size="sm" onClick={() => setCompareOpen(true)}>
               <GitCompare className="size-3.5 sm:size-4" />
-              <span className="text-xs sm:text-sm">{t.explore.compare} ({compareIds.length}/3)</span>
+              <span className="text-xs sm:text-sm">
+                {t.explore.compare} ({compareIds.length}/3)
+              </span>
             </Button>
           </div>
         )}
@@ -935,10 +1208,34 @@ export function Explore() {
             <div className="tech-label text-[10px] text-muted-foreground">
               {t.explore.resultsCount(results.length)}
             </div>
-            {catalogLoading && !remoteProducts && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在加载已核验产品…' : 'Loading verified products…'}</div>}
-            {catalogError && !remoteProducts && !demoDataEnabled && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? '产品目录暂不可用，请稍后重试' : 'Product catalog is temporarily unavailable'}</div>}
-            {remoteLoading && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在查询公开卫星数据…' : 'Querying open satellite data…'}</div>}
-            {remoteError && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? (demoDataEnabled ? '公开数据源暂不可用，已回退示例数据' : '公开数据源暂不可用') : (demoDataEnabled ? 'Open source unavailable; showing demo data' : 'Open source unavailable')}</div>}
+            {catalogLoading && !remoteProducts && (
+              <div className="mt-1 text-[10px] text-primary">
+                {lang === 'zh' ? '正在加载已核验产品…' : 'Loading verified products…'}
+              </div>
+            )}
+            {catalogError && !remoteProducts && !demoDataEnabled && (
+              <div className="mt-1 text-[10px] text-warning">
+                {lang === 'zh'
+                  ? '产品目录暂不可用，请稍后重试'
+                  : 'Product catalog is temporarily unavailable'}
+              </div>
+            )}
+            {remoteLoading && (
+              <div className="mt-1 text-[10px] text-primary">
+                {lang === 'zh' ? '正在查询公开卫星数据…' : 'Querying open satellite data…'}
+              </div>
+            )}
+            {remoteError && (
+              <div className="mt-1 text-[10px] text-warning">
+                {lang === 'zh'
+                  ? demoDataEnabled
+                    ? '公开数据源暂不可用，已回退示例数据'
+                    : '公开数据源暂不可用'
+                  : demoDataEnabled
+                    ? 'Open source unavailable; showing demo data'
+                    : 'Open source unavailable'}
+              </div>
+            )}
           </div>
           {!aoi && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -949,7 +1246,9 @@ export function Explore() {
         </div>
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {results.length === 0 && (
-            <div className="pt-16 text-center text-sm text-muted-foreground">{t.common.noResults}</div>
+            <div className="pt-16 text-center text-sm text-muted-foreground">
+              {t.common.noResults}
+            </div>
           )}
           {results.map((p) => (
             <ResultCard
@@ -979,21 +1278,49 @@ export function Explore() {
                 <div className="tech-label text-[10px] text-muted-foreground">
                   {t.explore.resultsCount(results.length)}
                 </div>
-                {catalogLoading && !remoteProducts && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在加载已核验产品…' : 'Loading verified products…'}</div>}
-                {catalogError && !remoteProducts && !demoDataEnabled && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? '产品目录暂不可用，请稍后重试' : 'Product catalog is temporarily unavailable'}</div>}
-                {remoteLoading && <div className="mt-1 text-[10px] text-primary">{lang === 'zh' ? '正在查询公开卫星数据…' : 'Querying open satellite data…'}</div>}
-                {remoteError && <div className="mt-1 text-[10px] text-warning">{lang === 'zh' ? (demoDataEnabled ? '公开数据源暂不可用，已回退示例数据' : '公开数据源暂不可用') : (demoDataEnabled ? 'Open source unavailable; showing demo data' : 'Open source unavailable')}</div>}
+                {catalogLoading && !remoteProducts && (
+                  <div className="mt-1 text-[10px] text-primary">
+                    {lang === 'zh' ? '正在加载已核验产品…' : 'Loading verified products…'}
+                  </div>
+                )}
+                {catalogError && !remoteProducts && !demoDataEnabled && (
+                  <div className="mt-1 text-[10px] text-warning">
+                    {lang === 'zh'
+                      ? '产品目录暂不可用，请稍后重试'
+                      : 'Product catalog is temporarily unavailable'}
+                  </div>
+                )}
+                {remoteLoading && (
+                  <div className="mt-1 text-[10px] text-primary">
+                    {lang === 'zh' ? '正在查询公开卫星数据…' : 'Querying open satellite data…'}
+                  </div>
+                )}
+                {remoteError && (
+                  <div className="mt-1 text-[10px] text-warning">
+                    {lang === 'zh'
+                      ? demoDataEnabled
+                        ? '公开数据源暂不可用，已回退示例数据'
+                        : '公开数据源暂不可用'
+                      : demoDataEnabled
+                        ? 'Open source unavailable; showing demo data'
+                        : 'Open source unavailable'}
+                  </div>
+                )}
               </div>
               {!aoi && (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Crosshair className="size-3" />
-                  <span className="hidden sm:inline">{lang === 'zh' ? '绘制区域看覆盖率' : 'Draw AOI'}</span>
+                  <span className="hidden sm:inline">
+                    {lang === 'zh' ? '绘制区域看覆盖率' : 'Draw AOI'}
+                  </span>
                 </span>
               )}
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
               {results.length === 0 && (
-                <div className="pt-16 text-center text-sm text-muted-foreground">{t.common.noResults}</div>
+                <div className="pt-16 text-center text-sm text-muted-foreground">
+                  {t.common.noResults}
+                </div>
               )}
               {results.map((p) => (
                 <ResultCard

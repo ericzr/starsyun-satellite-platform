@@ -85,6 +85,9 @@ export interface ProductFilters {
   resMaxCustom?: number;
   cloudMax: number;
   offNadirMax: number;
+  deliveryMode?: 'all' | 'instant' | 'inquiry';
+  deliveryMaxDays?: number;
+  analysisService?: ValueAddedService;
   searchQuery?: string;
   regionId?: string;
 }

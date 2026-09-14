@@ -5,13 +5,7 @@ import type { BBox } from '../lib/geo';
 export type { Satellite };
 
 export type DataType =
-  | 'optical'
-  | 'sar'
-  | 'multispectral'
-  | 'hyperspectral'
-  | 'nightlight'
-  | 'dem'
-  | 'video';
+  'optical' | 'sar' | 'multispectral' | 'hyperspectral' | 'nightlight' | 'dem' | 'video';
 
 export type PriceType = 'fixed' | 'estimated' | 'inquiry' | 'free';
 export type ProductStatus = 'archive' | 'instant' | 'inquiry' | 'tasking';
@@ -25,11 +19,11 @@ export type ProcessingLevel = 'L1' | 'L2' | 'L3' | 'L4';
 
 // 新增：增值服务类型
 export type ValueAddedService =
-  | 'change-detection'      // 变化检测
-  | 'land-cover'           // 地物分类
-  | 'feature-extraction'   // 目标提取
-  | 'time-series'          // 时间序列分析
-  | 'custom-analysis';     // 定制分析
+  | 'change-detection' // 变化检测
+  | 'land-cover' // 地物分类
+  | 'feature-extraction' // 目标提取
+  | 'time-series' // 时间序列分析
+  | 'custom-analysis'; // 定制分析
 
 export interface ValueAddedServiceInfo {
   id: ValueAddedService;
@@ -105,16 +99,86 @@ export interface Region {
 }
 
 export const REGIONS: Region[] = [
-  { id: 'dubai', name: '迪拜 · 杰贝阿里港', nameEn: 'Jebel Ali Port, Dubai', center: [55.027, 25.011], zoom: 12, aliases: ['dubai', '迪拜', 'jebel ali', 'jebel ali port', '杰贝阿里'] },
-  { id: 'shanghai', name: '上海 · 浦东', nameEn: 'Shanghai Pudong', center: [121.545, 31.221], zoom: 11, aliases: ['shanghai', '上海', 'pudong', '浦东', '浦东机场'] },
-  { id: 'shenzhen', name: '深圳', nameEn: 'Shenzhen', center: [114.058, 22.543], zoom: 11, aliases: ['shenzhen', '深圳'] },
-  { id: 'beijing', name: '北京', nameEn: 'Beijing', center: [116.407, 39.904], zoom: 11, aliases: ['beijing', '北京'] },
-  { id: 'ordos', name: '鄂尔多斯 · 矿区', nameEn: 'Ordos Mining Area', center: [109.781, 39.608], zoom: 11, aliases: ['ordos', '鄂尔多斯', '矿区'] },
-  { id: 'riyadh', name: '利雅得', nameEn: 'Riyadh', center: [46.675, 24.713], zoom: 11, aliases: ['riyadh', '利雅得'] },
-  { id: 'singapore', name: '新加坡', nameEn: 'Singapore', center: [103.851, 1.29], zoom: 11, aliases: ['singapore', '新加坡'] },
-  { id: 'jakarta', name: '雅加达', nameEn: 'Jakarta', center: [106.845, -6.208], zoom: 11, aliases: ['jakarta', '雅加达'] },
-  { id: 'nairobi', name: '内罗毕', nameEn: 'Nairobi', center: [36.817, -1.286], zoom: 11, aliases: ['nairobi', '内罗毕'] },
-  { id: 'saopaulo', name: '圣保罗', nameEn: 'São Paulo', center: [-46.633, -23.55], zoom: 11, aliases: ['sao paulo', 'são paulo', '圣保罗'] },
+  {
+    id: 'dubai',
+    name: '迪拜 · 杰贝阿里港',
+    nameEn: 'Jebel Ali Port, Dubai',
+    center: [55.027, 25.011],
+    zoom: 12,
+    aliases: ['dubai', '迪拜', 'jebel ali', 'jebel ali port', '杰贝阿里'],
+  },
+  {
+    id: 'shanghai',
+    name: '上海 · 浦东',
+    nameEn: 'Shanghai Pudong',
+    center: [121.545, 31.221],
+    zoom: 11,
+    aliases: ['shanghai', '上海', 'pudong', '浦东', '浦东机场'],
+  },
+  {
+    id: 'shenzhen',
+    name: '深圳',
+    nameEn: 'Shenzhen',
+    center: [114.058, 22.543],
+    zoom: 11,
+    aliases: ['shenzhen', '深圳'],
+  },
+  {
+    id: 'beijing',
+    name: '北京',
+    nameEn: 'Beijing',
+    center: [116.407, 39.904],
+    zoom: 11,
+    aliases: ['beijing', '北京'],
+  },
+  {
+    id: 'ordos',
+    name: '鄂尔多斯 · 矿区',
+    nameEn: 'Ordos Mining Area',
+    center: [109.781, 39.608],
+    zoom: 11,
+    aliases: ['ordos', '鄂尔多斯', '矿区'],
+  },
+  {
+    id: 'riyadh',
+    name: '利雅得',
+    nameEn: 'Riyadh',
+    center: [46.675, 24.713],
+    zoom: 11,
+    aliases: ['riyadh', '利雅得'],
+  },
+  {
+    id: 'singapore',
+    name: '新加坡',
+    nameEn: 'Singapore',
+    center: [103.851, 1.29],
+    zoom: 11,
+    aliases: ['singapore', '新加坡'],
+  },
+  {
+    id: 'jakarta',
+    name: '雅加达',
+    nameEn: 'Jakarta',
+    center: [106.845, -6.208],
+    zoom: 11,
+    aliases: ['jakarta', '雅加达'],
+  },
+  {
+    id: 'nairobi',
+    name: '内罗毕',
+    nameEn: 'Nairobi',
+    center: [36.817, -1.286],
+    zoom: 11,
+    aliases: ['nairobi', '内罗毕'],
+  },
+  {
+    id: 'saopaulo',
+    name: '圣保罗',
+    nameEn: 'São Paulo',
+    center: [-46.633, -23.55],
+    zoom: 11,
+    aliases: ['sao paulo', 'são paulo', '圣保罗'],
+  },
 ];
 
 export interface AdministrativeArea {
@@ -138,41 +202,120 @@ export interface AdministrativeArea {
 // The UI is data-driven so global boundary/geocoding services can extend it without changing Explore.
 export const ADMINISTRATIVE_AREAS: AdministrativeArea[] = [
   {
-    id: 'china', name: '中国', nameEn: 'China', subdivisions: [
-      { id: 'shanghai', name: '上海市', nameEn: 'Shanghai', localities: [{ id: 'pudong', name: '浦东新区', nameEn: 'Pudong New Area', regionId: 'shanghai' }] },
-      { id: 'guangdong', name: '广东省', nameEn: 'Guangdong', localities: [{ id: 'shenzhen', name: '深圳市', nameEn: 'Shenzhen', regionId: 'shenzhen' }] },
-      { id: 'beijing', name: '北京市', nameEn: 'Beijing', localities: [{ id: 'beijing', name: '北京市', nameEn: 'Beijing', regionId: 'beijing' }] },
-      { id: 'inner-mongolia', name: '内蒙古自治区', nameEn: 'Inner Mongolia', localities: [{ id: 'ordos', name: '鄂尔多斯市', nameEn: 'Ordos', regionId: 'ordos' }] },
+    id: 'china',
+    name: '中国',
+    nameEn: 'China',
+    subdivisions: [
+      {
+        id: 'shanghai',
+        name: '上海市',
+        nameEn: 'Shanghai',
+        localities: [
+          { id: 'pudong', name: '浦东新区', nameEn: 'Pudong New Area', regionId: 'shanghai' },
+        ],
+      },
+      {
+        id: 'guangdong',
+        name: '广东省',
+        nameEn: 'Guangdong',
+        localities: [{ id: 'shenzhen', name: '深圳市', nameEn: 'Shenzhen', regionId: 'shenzhen' }],
+      },
+      {
+        id: 'beijing',
+        name: '北京市',
+        nameEn: 'Beijing',
+        localities: [{ id: 'beijing', name: '北京市', nameEn: 'Beijing', regionId: 'beijing' }],
+      },
+      {
+        id: 'inner-mongolia',
+        name: '内蒙古自治区',
+        nameEn: 'Inner Mongolia',
+        localities: [{ id: 'ordos', name: '鄂尔多斯市', nameEn: 'Ordos', regionId: 'ordos' }],
+      },
     ],
   },
   {
-    id: 'uae', name: '阿拉伯联合酋长国', nameEn: 'United Arab Emirates', subdivisions: [
-      { id: 'dubai', name: '迪拜酋长国', nameEn: 'Dubai Emirate', localities: [{ id: 'jebel-ali', name: '杰贝阿里港', nameEn: 'Jebel Ali Port', regionId: 'dubai' }] },
+    id: 'uae',
+    name: '阿拉伯联合酋长国',
+    nameEn: 'United Arab Emirates',
+    subdivisions: [
+      {
+        id: 'dubai',
+        name: '迪拜酋长国',
+        nameEn: 'Dubai Emirate',
+        localities: [
+          { id: 'jebel-ali', name: '杰贝阿里港', nameEn: 'Jebel Ali Port', regionId: 'dubai' },
+        ],
+      },
     ],
   },
   {
-    id: 'saudi-arabia', name: '沙特阿拉伯', nameEn: 'Saudi Arabia', subdivisions: [
-      { id: 'riyadh-province', name: '利雅得省', nameEn: 'Riyadh Province', localities: [{ id: 'riyadh', name: '利雅得', nameEn: 'Riyadh', regionId: 'riyadh' }] },
+    id: 'saudi-arabia',
+    name: '沙特阿拉伯',
+    nameEn: 'Saudi Arabia',
+    subdivisions: [
+      {
+        id: 'riyadh-province',
+        name: '利雅得省',
+        nameEn: 'Riyadh Province',
+        localities: [{ id: 'riyadh', name: '利雅得', nameEn: 'Riyadh', regionId: 'riyadh' }],
+      },
     ],
   },
   {
-    id: 'singapore', name: '新加坡', nameEn: 'Singapore', subdivisions: [
-      { id: 'singapore', name: '新加坡', nameEn: 'Singapore', localities: [{ id: 'singapore', name: '新加坡', nameEn: 'Singapore', regionId: 'singapore' }] },
+    id: 'singapore',
+    name: '新加坡',
+    nameEn: 'Singapore',
+    subdivisions: [
+      {
+        id: 'singapore',
+        name: '新加坡',
+        nameEn: 'Singapore',
+        localities: [
+          { id: 'singapore', name: '新加坡', nameEn: 'Singapore', regionId: 'singapore' },
+        ],
+      },
     ],
   },
   {
-    id: 'indonesia', name: '印度尼西亚', nameEn: 'Indonesia', subdivisions: [
-      { id: 'jakarta', name: '雅加达首都特区', nameEn: 'Jakarta Special Capital Region', localities: [{ id: 'jakarta', name: '雅加达', nameEn: 'Jakarta', regionId: 'jakarta' }] },
+    id: 'indonesia',
+    name: '印度尼西亚',
+    nameEn: 'Indonesia',
+    subdivisions: [
+      {
+        id: 'jakarta',
+        name: '雅加达首都特区',
+        nameEn: 'Jakarta Special Capital Region',
+        localities: [{ id: 'jakarta', name: '雅加达', nameEn: 'Jakarta', regionId: 'jakarta' }],
+      },
     ],
   },
   {
-    id: 'kenya', name: '肯尼亚', nameEn: 'Kenya', subdivisions: [
-      { id: 'nairobi-county', name: '内罗毕县', nameEn: 'Nairobi County', localities: [{ id: 'nairobi', name: '内罗毕', nameEn: 'Nairobi', regionId: 'nairobi' }] },
+    id: 'kenya',
+    name: '肯尼亚',
+    nameEn: 'Kenya',
+    subdivisions: [
+      {
+        id: 'nairobi-county',
+        name: '内罗毕县',
+        nameEn: 'Nairobi County',
+        localities: [{ id: 'nairobi', name: '内罗毕', nameEn: 'Nairobi', regionId: 'nairobi' }],
+      },
     ],
   },
   {
-    id: 'brazil', name: '巴西', nameEn: 'Brazil', subdivisions: [
-      { id: 'sao-paulo', name: '圣保罗州', nameEn: 'São Paulo', localities: [{ id: 'sao-paulo', name: '圣保罗', nameEn: 'São Paulo', regionId: 'saopaulo' }] },
+    id: 'brazil',
+    name: '巴西',
+    nameEn: 'Brazil',
+    subdivisions: [
+      {
+        id: 'sao-paulo',
+        name: '圣保罗州',
+        nameEn: 'São Paulo',
+        localities: [
+          { id: 'sao-paulo', name: '圣保罗', nameEn: 'São Paulo', regionId: 'saopaulo' },
+        ],
+      },
     ],
   },
 ];
@@ -207,7 +350,8 @@ export interface Product {
   status: ProductStatus;
   category: ProductCategory; // 新增：产品分类
   bands: string;
-  incidence: number;
+  /** Off-nadir/incidence angle in degrees; null means the provider did not publish it. */
+  incidence: number | null;
   sunElevation: number;
   regionId: string;
   thumbnail: string;
@@ -294,41 +438,57 @@ function makeProduct(sat: Satellite, region: Region, rnd: () => number, idx: num
 
   // 确定产品分类（主要维度）
   const category: ProductCategory =
-    rnd() > 0.85 ? 'tasking' : // 15% 任务拍摄
-    rnd() > 0.95 ? 'analysis' : // 5% 分析服务
-    'archive'; // 80% 历史存档
+    rnd() > 0.85
+      ? 'tasking' // 15% 任务拍摄
+      : rnd() > 0.95
+        ? 'analysis' // 5% 分析服务
+        : 'archive'; // 80% 历史存档
 
   // 基于 category 确定 status（保留用于内部逻辑）
   const status: ProductStatus =
-    category === 'tasking' ? 'tasking' :
-    category === 'analysis' ? 'inquiry' :
-    isFree ? 'instant' :
-    priceType === 'inquiry' ? 'inquiry' :
-    rnd() > 0.5 ? 'archive' : 'instant';
+    category === 'tasking'
+      ? 'tasking'
+      : category === 'analysis'
+        ? 'inquiry'
+        : isFree
+          ? 'instant'
+          : priceType === 'inquiry'
+            ? 'inquiry'
+            : rnd() > 0.5
+              ? 'archive'
+              : 'instant';
 
   // 标准化产品：价格明确、现货或快速交付、分辨率>0.5m
   const purchaseType: PurchaseType =
-    category === 'analysis' ? 'inquiry' : // 分析服务需要询价
-    category === 'tasking' ? 'inquiry' : // 任务拍摄需要询价
-    priceType !== 'inquiry' && resolution > 0.5 && status !== 'inquiry'
-      ? 'instant'
-      : 'inquiry';
+    category === 'analysis'
+      ? 'inquiry' // 分析服务需要询价
+      : category === 'tasking'
+        ? 'inquiry' // 任务拍摄需要询价
+        : priceType !== 'inquiry' && resolution > 0.5 && status !== 'inquiry'
+          ? 'instant'
+          : 'inquiry';
 
   const instantDelivery = status === 'instant' && purchaseType === 'instant';
 
   // 确定处理级别
   const processingLevel: ProcessingLevel =
-    resolution <= 0.5 ? 'L3' : // 高分辨率产品通常是L3
-    resolution <= 1 ? 'L2' :
-    resolution <= 5 ? 'L2' :
-    'L1';
+    resolution <= 0.5
+      ? 'L3' // 高分辨率产品通常是L3
+      : resolution <= 1
+        ? 'L2'
+        : resolution <= 5
+          ? 'L2'
+          : 'L1';
 
   // 交付天数（基于 category）
   const deliveryDays =
-    category === 'tasking' ? Math.floor(7 + rnd() * 23) : // 任务拍摄：7-30天
-    category === 'analysis' ? Math.floor(5 + rnd() * 10) : // 分析服务：5-15天
-    category === 'archive' && status === 'instant' ? Math.floor(1 + rnd() * 2) : // 存档即时：1-2天
-    Math.floor(3 + rnd() * 4); // 存档标准：3-6天
+    category === 'tasking'
+      ? Math.floor(7 + rnd() * 23) // 任务拍摄：7-30天
+      : category === 'analysis'
+        ? Math.floor(5 + rnd() * 10) // 分析服务：5-15天
+        : category === 'archive' && status === 'instant'
+          ? Math.floor(1 + rnd() * 2) // 存档即时：1-2天
+          : Math.floor(3 + rnd() * 4); // 存档标准：3-6天
 
   // 可用增值服务
   const availableServices: ValueAddedService[] = [];
@@ -365,7 +525,14 @@ function makeProduct(sat: Satellite, region: Region, rnd: () => number, idx: num
     priceType,
     unitPrice,
     minArea,
-    deliveryTime: category === 'tasking' ? '7–30 天' : category === 'analysis' ? '5–15 天' : deliveryDays <= 2 ? '1–2 天' : '3–6 天',
+    deliveryTime:
+      category === 'tasking'
+        ? '7–30 天'
+        : category === 'analysis'
+          ? '5–15 天'
+          : deliveryDays <= 2
+            ? '1–2 天'
+            : '3–6 天',
     productLevel: LEVELS[Math.floor(rnd() * LEVELS.length)],
     processingLevel,
     category,
