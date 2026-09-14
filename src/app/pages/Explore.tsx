@@ -60,9 +60,11 @@ function matchRegion(q: string) {
     .sort((a, b) => a.score - b.score || a.region.name.length - b.region.name.length)[0]?.region ?? null;
 }
 
-const TIME_DAYS: Record<string, number> = { '1': 1, '7': 7, '30': 30, '90': 90, '365': 365, all: Infinity };
-
 type CategoryQuery = 'archive' | 'latest' | 'tasking' | 'sar' | 'dem' | 'analysis';
+
+function dateOnly(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
 
 function filtersForCategory(value: string | null): Filters {
   const base = { ...DEFAULT_FILTERS };
@@ -70,7 +72,12 @@ function filtersForCategory(value: string | null): Filters {
     case 'archive':
       return { ...base, categories: ['archive'] };
     case 'latest':
-      return { ...base, categories: ['archive'], timeMode: 'preset', timePreset: '30' };
+      return {
+        ...base,
+        categories: ['archive'],
+        dateStart: dateOnly(new Date(Date.now() - 30 * 86400000)),
+        dateEnd: dateOnly(new Date()),
+      };
     case 'tasking':
       return { ...base, categories: ['tasking'] };
     case 'sar':
@@ -105,18 +112,11 @@ function boundedBbox(west: number, south: number, east: number, north: number): 
 }
 
 function datetimeForFilters(filters: Filters): string | undefined {
-  if (filters.timeMode === 'single' && filters.dateStart) {
-    return `${filters.dateStart}T00:00:00Z/${filters.dateStart}T23:59:59Z`;
-  }
-  if (filters.timeMode === 'range' && filters.dateStart && filters.dateEnd) {
-    const [start, end] = filters.dateStart <= filters.dateEnd
-      ? [filters.dateStart, filters.dateEnd]
-      : [filters.dateEnd, filters.dateStart];
+  if (filters.dateStart || filters.dateEnd) {
+    const first = filters.dateStart || filters.dateEnd!;
+    const second = filters.dateEnd || filters.dateStart!;
+    const [start, end] = first <= second ? [first, second] : [second, first];
     return `${start}T00:00:00Z/${end}T23:59:59Z`;
-  }
-  if (filters.timeMode === 'preset' && filters.timePreset !== 'all') {
-    const start = new Date(Date.now() - TIME_DAYS[filters.timePreset] * 86400000).toISOString();
-    return `${start}/${new Date().toISOString()}`;
   }
   return undefined;
 }
@@ -634,7 +634,7 @@ export function Explore() {
     searchEarthSearch({
       bbox: remoteBbox,
       datetime: datetimeForFilters(filters),
-      cloudCoverMax: filters.cloudMax === 'all' ? undefined : Number(filters.cloudMax),
+      cloudCoverMax: filters.cloudMax >= 100 ? undefined : filters.cloudMax,
       limit: 80,
     })
       .then((products) => {
@@ -681,25 +681,20 @@ export function Explore() {
       }
     }
 
-    if (!isRemote && filters.cloudMax !== 'all') list = list.filter((p) => p.cloudCover <= parseFloat(filters.cloudMax));
+    if (filters.cloudMax < 100) list = list.filter((p) => p.cloudCover <= filters.cloudMax);
+    if (filters.offNadirMax < 60) list = list.filter((p) => p.incidence <= filters.offNadirMax);
 
     // 时间筛选
-    if (filters.timeMode === 'preset' && filters.timePreset !== 'all') {
-      const cutoff = Date.now() - TIME_DAYS[filters.timePreset] * 86400000;
-      list = list.filter((p) => new Date(p.captureTime).getTime() >= cutoff);
-    } else if (filters.timeMode === 'range' && filters.dateStart && filters.dateEnd) {
-      const [startDate, endDate] = filters.dateStart <= filters.dateEnd
-        ? [filters.dateStart, filters.dateEnd]
-        : [filters.dateEnd, filters.dateStart];
+    if (filters.dateStart || filters.dateEnd) {
+      const first = filters.dateStart || filters.dateEnd!;
+      const second = filters.dateEnd || filters.dateStart!;
+      const [startDate, endDate] = first <= second ? [first, second] : [second, first];
       const startTime = new Date(startDate).getTime();
       const endTime = new Date(endDate).getTime() + 86400000; // 包含结束日期当天
       list = list.filter((p) => {
         const captureTime = new Date(p.captureTime).getTime();
         return captureTime >= startTime && captureTime < endTime;
       });
-    } else if (filters.timeMode === 'single' && filters.dateStart) {
-      const targetDate = filters.dateStart;
-      list = list.filter((p) => p.captureTime === targetDate);
     }
 
     return [...list].sort((a, b) => (a.captureTime < b.captureTime ? 1 : -1));

@@ -77,15 +77,14 @@ export interface ProductFilters {
   dataTypes: string[];
   categories: string[];
   processingLevels: string[];
-  timeMode: 'preset' | 'range' | 'single';
-  timePreset: string;
   dateStart?: string;
   dateEnd?: string;
   resMode: 'preset' | 'range';
   resMax: string;
   resMin?: number;
   resMaxCustom?: number;
-  cloudMax: string;
+  cloudMax: number;
+  offNadirMax: number;
   searchQuery?: string;
   regionId?: string;
 }
