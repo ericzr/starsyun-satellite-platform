@@ -13,35 +13,34 @@ import {
   SelectValue,
 } from './ui/select';
 import { cn } from './ui/utils';
+import { Slider } from './ui/slider';
 
 export interface Filters {
   dataTypes: DataType[];
   categories: ProductCategory[];
   processingLevels: ProcessingLevel[];
-  timeMode: 'preset' | 'range' | 'single'; // 时间筛选模式
-  timePreset: '1' | '7' | '30' | '90' | '365' | 'all'; // 预设时间范围
   dateStart?: string; // 开始日期 (YYYY-MM-DD)
   dateEnd?: string; // 结束日期 (YYYY-MM-DD)
   resMode: 'preset' | 'range'; // 分辨率筛选模式
   resMax: string; // '0.5' | '1' | '3' | '10' | 'all'
   resMin?: number; // 最小分辨率 (meters)
   resMaxCustom?: number; // 最大分辨率 (meters)
-  cloudMax: string; // '5' | '10' | '20' | 'all'
+  cloudMax: number; // 最大云量百分比，100 表示不限
+  offNadirMax: number; // 最大侧摆角，60 表示不限
 }
 
 export const DEFAULT_FILTERS: Filters = {
   dataTypes: [],
   categories: [],
   processingLevels: [],
-  timeMode: 'preset',
-  timePreset: 'all',
   dateStart: undefined,
   dateEnd: undefined,
   resMode: 'preset',
   resMax: 'all',
   resMin: undefined,
   resMaxCustom: undefined,
-  cloudMax: 'all',
+  cloudMax: 100,
+  offNadirMax: 60,
 };
 
 const DATA_TYPE_OPTS: DataType[] = ['optical', 'sar', 'multispectral', 'dem'];
@@ -201,69 +200,30 @@ export function FilterPanel({
       {/* Time */}
       <div className="space-y-2">
         <Label className="text-xs">{t.explore.fltTime}</Label>
-
-        {/* Time Mode Selector */}
-        <div className="flex gap-1.5">
-          <Chip
-            active={filters.timeMode === 'preset'}
-            onClick={() => onChange({ ...filters, timeMode: 'preset' })}
-          >
-            {lang === 'zh' ? '快捷' : 'Quick'}
-          </Chip>
-          <Chip
-            active={filters.timeMode === 'range'}
-            onClick={() => onChange({ ...filters, timeMode: 'range' })}
-          >
-            {lang === 'zh' ? '范围' : 'Range'}
-          </Chip>
-          <Chip
-            active={filters.timeMode === 'single'}
-            onClick={() => onChange({ ...filters, timeMode: 'single' })}
-          >
-            {lang === 'zh' ? '特定日期' : 'Single'}
-          </Chip>
-        </div>
-
-        {/* Preset Mode */}
-        {filters.timeMode === 'preset' && (
-          <Select
-            value={filters.timePreset}
-            onValueChange={(v) => onChange({ ...filters, timePreset: v as Filters['timePreset'] })}
-          >
-            <SelectTrigger className="h-9 w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t.explore.timeAll}</SelectItem>
-              <SelectItem value="1">{lang === 'zh' ? '今天' : 'Today'}</SelectItem>
-              <SelectItem value="7">{t.explore.time7}</SelectItem>
-              <SelectItem value="30">{t.explore.time30}</SelectItem>
-              <SelectItem value="90">{lang === 'zh' ? '近 90 天' : 'Last 90 days'}</SelectItem>
-              <SelectItem value="365">{t.explore.time365}</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
-
-        {/* Range Mode */}
-        {filters.timeMode === 'range' && (
-          <div className="space-y-2">
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">{lang === 'zh' ? '开始日期' : 'Start Date'}</Label>
-              <DateField value={filters.dateStart} placeholder={lang === 'zh' ? '年 / 月 / 日' : 'YYYY / MM / DD'} ariaLabel={lang === 'zh' ? '开始日期' : 'Start date'} onChange={(value) => onChange({ ...filters, dateStart: value })} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">{lang === 'zh' ? '结束日期' : 'End Date'}</Label>
-              <DateField value={filters.dateEnd} placeholder={lang === 'zh' ? '年 / 月 / 日' : 'YYYY / MM / DD'} ariaLabel={lang === 'zh' ? '结束日期' : 'End date'} onChange={(value) => onChange({ ...filters, dateEnd: value })} />
-            </div>
-          </div>
-        )}
-
-        {/* Single Date Mode */}
-        {filters.timeMode === 'single' && (
+        <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
           <div className="space-y-1">
-            <DateField value={filters.dateStart} placeholder={lang === 'zh' ? '年 / 月 / 日' : 'YYYY / MM / DD'} ariaLabel={lang === 'zh' ? '指定日期' : 'Selected date'} onChange={(value) => onChange({ ...filters, dateStart: value, dateEnd: value })} />
+            <Label className="text-[10px] text-muted-foreground">{lang === 'zh' ? '开始日期' : 'Start date'}</Label>
+            <DateField
+              value={filters.dateStart}
+              placeholder={lang === 'zh' ? '年 / 月 / 日' : 'YYYY / MM / DD'}
+              ariaLabel={lang === 'zh' ? '开始日期' : 'Start date'}
+              onChange={(value) => onChange({ ...filters, dateStart: value, dateEnd: filters.dateEnd || value })}
+            />
           </div>
-        )}
+          <span className="pb-2 text-xs text-muted-foreground">—</span>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">{lang === 'zh' ? '结束日期' : 'End date'}</Label>
+            <DateField
+              value={filters.dateEnd}
+              placeholder={lang === 'zh' ? '年 / 月 / 日' : 'YYYY / MM / DD'}
+              ariaLabel={lang === 'zh' ? '结束日期' : 'End date'}
+              onChange={(value) => onChange({ ...filters, dateStart: filters.dateStart || value, dateEnd: value })}
+            />
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          {lang === 'zh' ? '同一天表示单日查询，留空表示不限时间' : 'Use the same date for a single-day search; leave blank for any date'}
+        </p>
       </div>
 
       {/* Resolution */}
@@ -319,17 +279,37 @@ export function FilterPanel({
       {/* Cloud */}
       <div className="space-y-2">
         <Label className="text-xs">{t.explore.fltCloud}</Label>
-        <Select value={filters.cloudMax} onValueChange={(v) => onChange({ ...filters, cloudMax: v })}>
-          <SelectTrigger className="h-9 w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t.common.all}</SelectItem>
-            <SelectItem value="5">&lt; 5%</SelectItem>
-            <SelectItem value="10">&lt; 10%</SelectItem>
-            <SelectItem value="20">&lt; 20%</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-3">
+          <Slider
+            value={[filters.cloudMax]}
+            min={0}
+            max={100}
+            step={1}
+            aria-label={lang === 'zh' ? '最大云量' : 'Maximum cloud cover'}
+            onValueChange={([value]) => onChange({ ...filters, cloudMax: value ?? 100 })}
+          />
+          <span className="w-12 shrink-0 text-right font-mono text-xs text-muted-foreground">
+            {filters.cloudMax >= 100 ? t.common.all : `${filters.cloudMax}%`}
+          </span>
+        </div>
+      </div>
+
+      {/* Off-nadir / side-looking angle */}
+      <div className="space-y-2">
+        <Label className="text-xs">{t.explore.fltSideLook}</Label>
+        <div className="flex items-center gap-3">
+          <Slider
+            value={[filters.offNadirMax]}
+            min={0}
+            max={60}
+            step={1}
+            aria-label={lang === 'zh' ? '最大侧摆角' : 'Maximum off-nadir angle'}
+            onValueChange={([value]) => onChange({ ...filters, offNadirMax: value ?? 60 })}
+          />
+          <span className="w-12 shrink-0 text-right font-mono text-xs text-muted-foreground">
+            {filters.offNadirMax >= 60 ? t.common.all : `${filters.offNadirMax}°`}
+          </span>
+        </div>
       </div>
     </div>
   );
