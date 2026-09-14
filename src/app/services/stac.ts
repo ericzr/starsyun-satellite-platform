@@ -28,6 +28,7 @@ export interface EarthSearchInput {
   datetime?: string;
   limit?: number;
   cloudCoverMax?: number;
+  offNadirMax?: number;
 }
 
 const remoteProducts = new Map<string, Product>();
@@ -73,6 +74,13 @@ function numberValue(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+function firstNumberValue(values: unknown[], fallback: number) {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return fallback;
+}
+
 function normalizeItem(item: StacItem, index: number): Product | null {
   const bbox = itemBbox(item);
   if (!bbox) return null;
@@ -80,6 +88,18 @@ function normalizeItem(item: StacItem, index: number): Product | null {
   const captureTime = dateOnly(properties.datetime);
   const cloudCover = numberValue(properties['eo:cloud_cover'], 0);
   const sunElevation = numberValue(properties['view:sun_elevation'], 0);
+  // STAC providers use different names for viewing/incidence angle. Keep the
+  // canonical Product field populated whenever a provider exposes one.
+  const incidence = firstNumberValue(
+    [
+      properties['view:incidence_angle'],
+      properties['view:off_nadir'],
+      properties['sar:incidence_angle'],
+      properties.incidence,
+      properties.incidenceAngle,
+    ],
+    0,
+  );
   const epsg = numberValue(properties['proj:epsg'], 4326);
   const id = `earth-search-${item.id}`;
   const thumbnail = publicUrl(asset(item, 'thumbnail') ?? link(item, 'thumbnail'));
@@ -116,7 +136,7 @@ function normalizeItem(item: StacItem, index: number): Product | null {
     status: 'instant',
     category: 'archive',
     bands: '13 bands',
-    incidence: 0,
+    incidence: Math.round(incidence * 10) / 10,
     sunElevation,
     regionId: 'open-data',
     thumbnail,
@@ -134,6 +154,7 @@ async function searchEarthSearchBox(input: EarthSearchInput, bbox: BBox): Promis
         bbox,
         datetime: input.datetime,
         cloudCoverMax: input.cloudCoverMax,
+        offNadirMax: input.offNadirMax,
         limit: Math.min(input.limit ?? 60, 100),
       }
     : {
@@ -144,6 +165,12 @@ async function searchEarthSearchBox(input: EarthSearchInput, bbox: BBox): Promis
   if (!STAC_GATEWAY_URL && input.datetime) body.datetime = input.datetime;
   if (!STAC_GATEWAY_URL && input.cloudCoverMax != null) {
     body.query = { 'eo:cloud_cover': { lte: input.cloudCoverMax } };
+  }
+  if (!STAC_GATEWAY_URL && input.offNadirMax != null) {
+    body.query = {
+      ...(typeof body.query === 'object' && body.query ? body.query : {}),
+      'view:incidence_angle': { lte: input.offNadirMax },
+    };
   }
 
   const response = await fetch(STAC_GATEWAY_URL ? `${STAC_GATEWAY_URL}/search` : EARTH_SEARCH_URL, {

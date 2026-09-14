@@ -635,6 +635,7 @@ export function Explore() {
       bbox: remoteBbox,
       datetime: datetimeForFilters(filters),
       cloudCoverMax: filters.cloudMax >= 100 ? undefined : filters.cloudMax,
+      offNadirMax: filters.offNadirMax >= 60 ? undefined : filters.offNadirMax,
       limit: 80,
     })
       .then((products) => {

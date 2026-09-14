@@ -9,6 +9,7 @@ type StacRequest = {
   bbox?: unknown;
   datetime?: unknown;
   cloudCoverMax?: unknown;
+  offNadirMax?: unknown;
   limit?: unknown;
 };
 
@@ -87,9 +88,13 @@ export function parseSearchRequest(body: StacRequest) {
   if (cloudCoverMax != null && (cloudCoverMax < 0 || cloudCoverMax > 100)) {
     throw new GatewayError(400, 'cloudCoverMax must be between 0 and 100');
   }
+  const offNadirMax = body.offNadirMax == null ? undefined : asNumber(body.offNadirMax);
+  if (offNadirMax != null && (offNadirMax < 0 || offNadirMax > 60)) {
+    throw new GatewayError(400, 'offNadirMax must be between 0 and 60');
+  }
   const rawLimit = asNumber(body.limit) ?? 60;
   const limit = Math.max(1, Math.min(100, Math.floor(rawLimit)));
-  return { collection, bbox, datetime, cloudCoverMax, limit };
+  return { collection, bbox, datetime, cloudCoverMax, offNadirMax, limit };
 }
 
 export function checkRateLimit(identity: string) {
@@ -138,7 +143,12 @@ export async function searchEarthSearch(input: ReturnType<typeof parseSearchRequ
         limit: input.limit,
       };
       if (input.datetime) query.datetime = input.datetime;
-      if (input.cloudCoverMax != null) query.query = { 'eo:cloud_cover': { lte: input.cloudCoverMax } };
+      if (input.cloudCoverMax != null || input.offNadirMax != null) {
+        query.query = {
+          ...(input.cloudCoverMax != null ? { 'eo:cloud_cover': { lte: input.cloudCoverMax } } : {}),
+          ...(input.offNadirMax != null ? { 'view:incidence_angle': { lte: input.offNadirMax } } : {}),
+        };
+      }
 
       const response = await fetch(`${EARTH_SEARCH_BASE}/search`, {
         method: 'POST',
