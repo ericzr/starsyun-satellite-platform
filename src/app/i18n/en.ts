@@ -20,6 +20,7 @@ export const en: Translation = {
     requestBuy: 'Request Purchase',
     getQuote: 'Get Official Quote',
     submit: 'Submit',
+    query: 'Query',
     reset: 'Reset',
     clear: 'Clear',
     all: 'Any',

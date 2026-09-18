@@ -32,6 +32,7 @@ export interface EarthSearchInput {
   limit?: number;
   cloudCoverMax?: number;
   offNadirMax?: number;
+  signal?: AbortSignal;
 }
 
 const remoteProducts = new Map<string, Product>();
@@ -177,6 +178,7 @@ async function searchEarthSearchBox(input: EarthSearchInput, bbox: BBox): Promis
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    signal: input.signal,
   });
   if (!response.ok) throw new Error(`Earth Search returned ${response.status}`);
 

@@ -126,9 +126,15 @@ function DateField({
 export function FilterPanel({
   filters,
   onChange,
+  onApply,
+  onReset,
+  isQuerying = false,
 }: {
   filters: Filters;
   onChange: (f: Filters) => void;
+  onApply: () => void;
+  onReset: () => void;
+  isQuerying?: boolean;
 }) {
   const { t, lang } = useI18n();
 
@@ -191,15 +197,6 @@ export function FilterPanel({
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h3 className="tech-label text-xs text-muted-foreground">{t.explore.filters}</h3>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1 px-2 text-xs text-muted-foreground"
-          onClick={() => onChange(DEFAULT_FILTERS)}
-        >
-          <RotateCcw className="size-3" />
-          {t.common.reset}
-        </Button>
       </div>
 
       {/* Product type */}
@@ -487,6 +484,16 @@ export function FilterPanel({
           </Select>
         </div>
       )}
+
+      <div className="sticky bottom-0 z-10 mt-5 grid grid-cols-2 gap-2 border-t border-border bg-panel/95 pt-4 backdrop-blur">
+        <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5" onClick={onReset}>
+          <RotateCcw className="size-3.5" />
+          {t.common.reset}
+        </Button>
+        <Button type="button" size="sm" className="h-9" onClick={onApply} disabled={isQuerying}>
+          {isQuerying ? t.common.loading : t.common.query}
+        </Button>
+      </div>
     </div>
   );
 }

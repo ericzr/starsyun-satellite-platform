@@ -18,6 +18,7 @@ export const zh = {
     requestBuy: '申请购买',
     getQuote: '获取正式报价',
     submit: '提交',
+    query: '查询',
     reset: '重置',
     clear: '清除',
     all: '不限',

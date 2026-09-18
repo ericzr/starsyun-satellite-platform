@@ -15,7 +15,15 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useI18n } from '../i18n';
-import { PRODUCTS, REGIONS, type Product } from '../data/products';
+import {
+  PRODUCTS,
+  REGIONS,
+  type DataType,
+  type Product,
+  type ProductCategory,
+  type ProcessingLevel,
+  type ValueAddedService,
+} from '../data/products';
 import {
   coverageRatio,
   intersects,
@@ -126,6 +134,115 @@ function filtersForCategory(value: string | null): Filters {
   }
 }
 
+const FILTER_DATA_TYPES: DataType[] = [
+  'optical',
+  'multispectral',
+  'hyperspectral',
+  'sar',
+  'nightlight',
+  'dem',
+  'video',
+];
+const FILTER_CATEGORIES: ProductCategory[] = ['archive', 'tasking', 'analysis'];
+const FILTER_PROCESSING_LEVELS: ProcessingLevel[] = ['L1', 'L2', 'L3', 'L4'];
+const FILTER_SERVICES: ValueAddedService[] = [
+  'change-detection',
+  'land-cover',
+  'feature-extraction',
+  'time-series',
+  'custom-analysis',
+];
+const FILTER_URL_KEYS = [
+  'ptype',
+  'dt',
+  'pl',
+  'start',
+  'end',
+  'res',
+  'rmax',
+  'cloud',
+  'angle',
+  'delivery',
+  'days',
+  'service',
+] as const;
+
+function parseListParam<T extends string>(value: string | null, allowed: readonly T[]): T[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(
+      (item, index, values): item is T =>
+        allowed.includes(item as T) && values.indexOf(item) === index,
+    );
+}
+
+function parseBoundedNumber(value: string | null, min: number, max: number) {
+  if (value == null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : undefined;
+}
+
+function filtersFromSearchParams(params: URLSearchParams, categoryParam: string | null): Filters {
+  const base = filtersForCategory(categoryParam);
+  const rawResolution = params.get('res');
+  const resolutionIsCustom = rawResolution === 'custom';
+  const presetResolution = ['all', '0.3', '0.5', '1', '2.5', '5', '10', '30'].includes(
+    rawResolution ?? '',
+  )
+    ? rawResolution!
+    : base.resMax;
+  const delivery = params.get('delivery');
+  const deliveryMode =
+    delivery === 'instant' || delivery === 'inquiry' ? delivery : base.deliveryMode;
+  const service = params.get('service');
+
+  return {
+    ...base,
+    dataTypes: parseListParam(params.get('dt'), FILTER_DATA_TYPES),
+    categories: parseListParam(params.get('ptype'), FILTER_CATEGORIES).slice(0, 1),
+    processingLevels: parseListParam(params.get('pl'), FILTER_PROCESSING_LEVELS),
+    dateStart: params.get('start') || base.dateStart,
+    dateEnd: params.get('end') || base.dateEnd,
+    resMode: resolutionIsCustom ? 'range' : 'preset',
+    resMax: resolutionIsCustom ? 'all' : presetResolution,
+    resMaxCustom: resolutionIsCustom ? parseBoundedNumber(params.get('rmax'), 0, 100) : undefined,
+    cloudMax: parseBoundedNumber(params.get('cloud'), 0, 100) ?? base.cloudMax,
+    offNadirMax: parseBoundedNumber(params.get('angle'), 0, 60) ?? base.offNadirMax,
+    deliveryMode,
+    deliveryMaxDays: [7, 14, 30].includes(Number(params.get('days')))
+      ? Number(params.get('days'))
+      : undefined,
+    analysisService: FILTER_SERVICES.includes(service as ValueAddedService)
+      ? (service as ValueAddedService)
+      : undefined,
+  };
+}
+
+function syncFilterParams(params: URLSearchParams, filters: Filters) {
+  const next = new URLSearchParams(params);
+  FILTER_URL_KEYS.forEach((key) => next.delete(key));
+  if (filters.categories[0]) next.set('ptype', filters.categories[0]);
+  if (filters.dataTypes.length) next.set('dt', filters.dataTypes.join(','));
+  if (filters.processingLevels.length) next.set('pl', filters.processingLevels.join(','));
+  if (filters.dateStart) next.set('start', filters.dateStart);
+  if (filters.dateEnd) next.set('end', filters.dateEnd);
+  if (filters.resMode === 'range') {
+    next.set('res', 'custom');
+    if (filters.resMaxCustom != null) next.set('rmax', String(filters.resMaxCustom));
+  } else if (filters.resMax !== 'all') {
+    next.set('res', filters.resMax);
+  }
+  if (filters.cloudMax < 100) next.set('cloud', String(filters.cloudMax));
+  if (filters.offNadirMax < 60) next.set('angle', String(filters.offNadirMax));
+  if (filters.deliveryMode && filters.deliveryMode !== 'all')
+    next.set('delivery', filters.deliveryMode);
+  if (filters.deliveryMaxDays != null) next.set('days', String(filters.deliveryMaxDays));
+  if (filters.analysisService) next.set('service', filters.analysisService);
+  return next;
+}
+
 function regionSearchBbox(region: (typeof REGIONS)[number]): BBox {
   const [lng, lat] = region.center;
   return boundedBbox(lng - 0.35, lat - 0.25, lng + 0.35, lat + 0.25);
@@ -161,9 +278,10 @@ export function Explore() {
   const navigate = useNavigate();
   const { setDraft } = useInquiryDraft();
   const { addToCart } = useCart();
-  const [params] = useSearchParams();
+  const [params, setSearchParams] = useSearchParams();
   const queryParam = params.get('q');
   const categoryParam = params.get('category');
+  const filterParamKey = FILTER_URL_KEYS.map((key) => `${key}=${params.get(key) ?? ''}`).join('&');
   // Administrative labels follow the active site language. The service layer
   // applies a deterministic translation/fallback policy for every locale.
   const adminLang = lang;
@@ -192,7 +310,9 @@ export function Explore() {
     GeoJSON.Polygon | GeoJSON.MultiPolygon
   > | null>(null);
   const [drawing, setDrawing] = useState(false);
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const initialFilters = filtersFromSearchParams(params, categoryParam);
+  const [draftFilters, setDraftFilters] = useState<Filters>(initialFilters);
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(initialFilters);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -213,6 +333,30 @@ export function Explore() {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState(false);
   const demoDataEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
+  const filters = appliedFilters;
+
+  function cloneFilters(value: Filters): Filters {
+    return {
+      ...value,
+      dataTypes: [...value.dataTypes],
+      categories: [...value.categories],
+      processingLevels: [...value.processingLevels],
+    };
+  }
+
+  function applyFilters() {
+    const next = cloneFilters(draftFilters);
+    setDraftFilters(next);
+    setAppliedFilters(next);
+    setSearchParams(syncFilterParams(params, next), { replace: true });
+  }
+
+  function resetFilters() {
+    const next = filtersForCategory(categoryParam);
+    setDraftFilters(next);
+    setAppliedFilters(cloneFilters(next));
+    setSearchParams(syncFilterParams(params, next), { replace: true });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -271,8 +415,10 @@ export function Explore() {
   // Home category cards carry a filter intent in the URL so deep links and
   // refreshes open the same product view instead of an unfiltered explorer.
   useEffect(() => {
-    setFilters(filtersForCategory(categoryParam));
-  }, [categoryParam]);
+    const next = filtersFromSearchParams(params, categoryParam);
+    setDraftFilters(next);
+    setAppliedFilters(cloneFilters(next));
+  }, [categoryParam, filterParamKey]);
 
   // Handle ?q= from home
   useEffect(() => {
@@ -851,24 +997,30 @@ export function Explore() {
   }
 
   // Query public Sentinel-2 STAC data for an explicit region/AOI.
+  const remoteDatetime = datetimeForFilters(filters);
+  const remoteCloudCoverMax = filters.cloudMax >= 100 ? undefined : filters.cloudMax;
+  const remoteOffNadirMax = filters.offNadirMax >= 60 ? undefined : filters.offNadirMax;
+  const canQueryArchiveSource =
+    filters.categories.length === 0 || filters.categories.includes('archive');
+
   useEffect(() => {
-    const canQueryArchiveSource =
-      filters.categories.length === 0 || filters.categories.includes('archive');
     if (!remoteBbox || !canQueryArchiveSource) {
       setRemoteProducts(null);
       setRemoteError(false);
       setRemoteLoading(false);
       return;
     }
+    const controller = new AbortController();
     let cancelled = false;
     setRemoteLoading(true);
     setRemoteError(false);
     searchEarthSearch({
       bbox: remoteBbox,
-      datetime: datetimeForFilters(filters),
-      cloudCoverMax: filters.cloudMax >= 100 ? undefined : filters.cloudMax,
-      offNadirMax: filters.offNadirMax >= 60 ? undefined : filters.offNadirMax,
+      datetime: remoteDatetime,
+      cloudCoverMax: remoteCloudCoverMax,
+      offNadirMax: remoteOffNadirMax,
       limit: 80,
+      signal: controller.signal,
     })
       .then((products) => {
         if (!cancelled) setRemoteProducts(products);
@@ -884,8 +1036,9 @@ export function Explore() {
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [remoteBbox, filters]);
+  }, [remoteBbox, remoteDatetime, remoteCloudCoverMax, remoteOffNadirMax, canQueryArchiveSource]);
 
   // Filtered results
   const sourceProducts = useMemo(() => {
@@ -1033,7 +1186,13 @@ export function Explore() {
           {renderAreaSelector()}
         </div>
         <div className="flex-1 overflow-y-auto p-4">
-          <FilterPanel filters={filters} onChange={setFilters} />
+          <FilterPanel
+            filters={draftFilters}
+            onChange={setDraftFilters}
+            onApply={applyFilters}
+            onReset={resetFilters}
+            isQuerying={remoteLoading}
+          />
         </div>
       </motion.aside>
 
@@ -1060,7 +1219,16 @@ export function Explore() {
             {renderAreaSelector()}
           </div>
           <div className="overflow-y-auto p-4">
-            <FilterPanel filters={filters} onChange={setFilters} />
+            <FilterPanel
+              filters={draftFilters}
+              onChange={setDraftFilters}
+              onApply={() => {
+                applyFilters();
+                setFilterOpen(false);
+              }}
+              onReset={resetFilters}
+              isQuerying={remoteLoading}
+            />
           </div>
         </SheetContent>
       </Sheet>
