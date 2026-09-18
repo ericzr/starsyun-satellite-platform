@@ -1,13 +1,42 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Download, Package } from 'lucide-react';
+import { ArrowLeft, CalendarClock, Download, FileJson, MapPin, Package } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useCart } from '../context/CartContext';
 import { VALUE_ADDED_SERVICES } from '../data/products';
-import { getCustomerOrder, loadDeliveryAssets, type DeliveryAsset, type ServerOrder } from '../lib/orders';
+import {
+  getCustomerOrder,
+  loadDeliveryAssets,
+  type DeliveryAsset,
+  type ServerOrder,
+} from '../lib/orders';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { fmtCny, fmtCnyEn } from '../lib/pricing';
+
+function snapshotText(snapshot: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = snapshot[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
+function snapshotBBox(snapshot: Record<string, unknown>) {
+  const value = snapshot.bbox;
+  if (
+    Array.isArray(value) &&
+    value.length >= 4 &&
+    value.slice(0, 4).every((item) => typeof item === 'number' && Number.isFinite(item))
+  ) {
+    return value
+      .slice(0, 4)
+      .map((item) => Number(item).toFixed(4))
+      .join(', ');
+  }
+  return '';
+}
 
 export function OrderDetail() {
   const { id } = useParams();
@@ -21,7 +50,9 @@ export function OrderDetail() {
 
   useEffect(() => {
     if (order || !id) return;
-    getCustomerOrder(id).then(setServerOrder).finally(() => setServerLoading(false));
+    getCustomerOrder(id)
+      .then(setServerOrder)
+      .finally(() => setServerLoading(false));
   }, [id, order]);
 
   const money = (v: number) => (lang === 'zh' ? fmtCny(v) : fmtCnyEn(v));
@@ -52,7 +83,11 @@ export function OrderDetail() {
   };
 
   if (!order && serverLoading) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{lang === 'zh' ? '加载订单中...' : 'Loading order...'}</div>;
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        {lang === 'zh' ? '加载订单中...' : 'Loading order...'}
+      </div>
+    );
   }
 
   if (!order && serverOrder) {
@@ -74,7 +109,12 @@ export function OrderDetail() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-[1200px] px-6 py-8">
-        <Button variant="ghost" size="sm" className="mb-4 gap-1" onClick={() => navigate('/orders')}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mb-4 gap-1"
+          onClick={() => navigate('/orders')}
+        >
           <ArrowLeft className="size-4" />
           {lang === 'zh' ? '返回订单列表' : 'Back to Orders'}
         </Button>
@@ -99,7 +139,10 @@ export function OrderDetail() {
               </h3>
               <div className="space-y-4">
                 {order.items.map((item, idx) => (
-                  <div key={idx} className="flex gap-4 border-b border-border pb-4 last:border-0 last:pb-0">
+                  <div
+                    key={idx}
+                    className="flex gap-4 border-b border-border pb-4 last:border-0 last:pb-0"
+                  >
                     <img
                       src={item.product.thumbnail}
                       alt={lang === 'zh' ? item.product.productName : item.product.productNameEn}
@@ -114,7 +157,15 @@ export function OrderDetail() {
                       </p>
                       {(item.services ?? []).length > 0 && (
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {lang === 'zh' ? '增值服务' : 'Services'}: {(item.services ?? []).map((id) => VALUE_ADDED_SERVICES.find((service) => service.id === id)?.[lang === 'zh' ? 'name' : 'nameEn'] ?? id).join(', ')}
+                          {lang === 'zh' ? '增值服务' : 'Services'}:{' '}
+                          {(item.services ?? [])
+                            .map(
+                              (id) =>
+                                VALUE_ADDED_SERVICES.find((service) => service.id === id)?.[
+                                  lang === 'zh' ? 'name' : 'nameEn'
+                                ] ?? id,
+                            )
+                            .join(', ')}
                         </p>
                       )}
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -140,7 +191,9 @@ export function OrderDetail() {
                 <div className="flex items-start gap-3">
                   <div className="mt-1 size-2 rounded-full bg-primary" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium">{lang === 'zh' ? '订单创建' : 'Order Created'}</p>
+                    <p className="text-sm font-medium">
+                      {lang === 'zh' ? '订单创建' : 'Order Created'}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(order.createdAt).toLocaleString(lang)}
                     </p>
@@ -150,7 +203,9 @@ export function OrderDetail() {
                   <div className="flex items-start gap-3">
                     <div className="mt-1 size-2 rounded-full bg-primary" />
                     <div className="flex-1">
-                      <p className="text-sm font-medium">{lang === 'zh' ? '支付完成' : 'Payment Completed'}</p>
+                      <p className="text-sm font-medium">
+                        {lang === 'zh' ? '支付完成' : 'Payment Completed'}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(order.paidAt).toLocaleString(lang)}
                       </p>
@@ -161,7 +216,9 @@ export function OrderDetail() {
                   <div className="flex items-start gap-3">
                     <div className="mt-1 size-2 rounded-full bg-primary" />
                     <div className="flex-1">
-                      <p className="text-sm font-medium">{lang === 'zh' ? '交付完成' : 'Delivered'}</p>
+                      <p className="text-sm font-medium">
+                        {lang === 'zh' ? '交付完成' : 'Delivered'}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(order.deliveredAt).toLocaleString(lang)}
                       </p>
@@ -197,11 +254,17 @@ export function OrderDetail() {
                 </h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{lang === 'zh' ? '支付方式' : 'Payment'}</span>
-                    <span>{order.paymentMethod ? paymentMethodLabels[order.paymentMethod] : '-'}</span>
+                    <span className="text-muted-foreground">
+                      {lang === 'zh' ? '支付方式' : 'Payment'}
+                    </span>
+                    <span>
+                      {order.paymentMethod ? paymentMethodLabels[order.paymentMethod] : '-'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">{lang === 'zh' ? '商品数量' : 'Items'}</span>
+                    <span className="text-muted-foreground">
+                      {lang === 'zh' ? '商品数量' : 'Items'}
+                    </span>
                     <span>{order.items.reduce((sum, item) => sum + item.quantity, 0)}</span>
                   </div>
                   <div className="border-t border-border pt-2">
@@ -222,7 +285,15 @@ export function OrderDetail() {
   );
 }
 
-function ServerOrderDetail({ order, lang, navigate }: { order: ServerOrder; lang: string; navigate: (to: string) => void }) {
+function ServerOrderDetail({
+  order,
+  lang,
+  navigate,
+}: {
+  order: ServerOrder;
+  lang: string;
+  navigate: (to: string) => void;
+}) {
   const [assets, setAssets] = useState<DeliveryAsset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(order.status === 'delivered');
   const [assetsError, setAssetsError] = useState(false);
@@ -239,7 +310,9 @@ function ServerOrderDetail({ order, lang, navigate }: { order: ServerOrder; lang
       .then((next) => active && setAssets(next))
       .catch(() => active && setAssetsError(true))
       .finally(() => active && setAssetsLoading(false));
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [order.id, order.status]);
 
   const status = {
@@ -249,10 +322,43 @@ function ServerOrderDetail({ order, lang, navigate }: { order: ServerOrder; lang
     delivered: { zh: '已交付', en: 'Delivered', variant: 'outline' as const },
     cancelled: { zh: '已取消', en: 'Cancelled', variant: 'destructive' as const },
   }[order.status];
+  const scopes = Array.from(
+    new Set(
+      order.items
+        .map((item) =>
+          snapshotText(item.productSnapshot, ['region', 'regionName', 'area', 'targetArea']),
+        )
+        .filter(Boolean),
+    ),
+  );
+  const providers = Array.from(
+    new Set(
+      order.items
+        .map((item) => snapshotText(item.productSnapshot, ['provider', 'providerName', 'source']))
+        .filter(Boolean),
+    ),
+  );
+  const acquisitionDates = Array.from(
+    new Set(
+      order.items
+        .map((item) =>
+          snapshotText(item.productSnapshot, ['acquisitionDate', 'capturedAt', 'datetime']),
+        )
+        .filter(Boolean),
+    ),
+  );
+  const bboxes = Array.from(
+    new Set(order.items.map((item) => snapshotBBox(item.productSnapshot)).filter(Boolean)),
+  );
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <Button variant="ghost" size="sm" className="mb-4 gap-1" onClick={() => navigate('/orders')}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mb-4 gap-1"
+          onClick={() => navigate('/orders')}
+        >
           <ArrowLeft className="size-4" />
           {lang === 'zh' ? '返回订单' : 'Back to Orders'}
         </Button>
@@ -265,31 +371,127 @@ function ServerOrderDetail({ order, lang, navigate }: { order: ServerOrder; lang
         </div>
         <div className="mt-6 space-y-4">
           <section className="rounded-lg border border-border bg-card p-5">
-            <h3 className="tech-label mb-4 text-xs text-muted-foreground">{lang === 'zh' ? '订单金额' : 'Order Amount'}</h3>
+            <h3 className="tech-label mb-4 text-xs text-muted-foreground">
+              {lang === 'zh' ? '订单金额' : 'Order Amount'}
+            </h3>
             <div className="flex items-end justify-between">
-              <div className="text-sm text-muted-foreground">{order.quoteNo} · {order.deliveryDays} {lang === 'zh' ? '天交付' : 'day delivery'}</div>
-              <div className="font-mono text-2xl text-primary">{order.total.toLocaleString()} {order.currency}</div>
+              <div className="text-sm text-muted-foreground">
+                {order.quoteNo} · {order.deliveryDays} {lang === 'zh' ? '天交付' : 'day delivery'}
+              </div>
+              <div className="font-mono text-2xl text-primary">
+                {order.total.toLocaleString()} {order.currency}
+              </div>
             </div>
           </section>
+          <div className="grid gap-4 md:grid-cols-2">
+            <section className="rounded-lg border border-border bg-card p-5">
+              <h3 className="flex items-center gap-2 text-sm font-medium">
+                <MapPin className="size-4 text-primary" />
+                {lang === 'zh' ? '订单范围' : 'Order scope'}
+              </h3>
+              <dl className="mt-4 space-y-3 text-sm">
+                <div>
+                  <dt className="text-xs text-muted-foreground">
+                    {lang === 'zh' ? '目标区域' : 'Target area'}
+                  </dt>
+                  <dd className="mt-1">{scopes.join('、') || '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">
+                    {lang === 'zh' ? '空间范围（BBox）' : 'Spatial extent (BBox)'}
+                  </dt>
+                  <dd className="mt-1 font-mono text-xs">{bboxes.join(' · ') || '—'}</dd>
+                </div>
+              </dl>
+            </section>
+            <section className="rounded-lg border border-border bg-card p-5">
+              <h3 className="flex items-center gap-2 text-sm font-medium">
+                <FileJson className="size-4 text-primary" />
+                {lang === 'zh' ? '订单元数据' : 'Order metadata'}
+              </h3>
+              <dl className="mt-4 space-y-3 text-sm">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-xs text-muted-foreground">
+                    {lang === 'zh' ? '报价单' : 'Quote'}
+                  </dt>
+                  <dd className="font-mono text-xs">{order.quoteNo || '—'}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-xs text-muted-foreground">
+                    {lang === 'zh' ? '供应商' : 'Provider'}
+                  </dt>
+                  <dd className="text-right text-xs">{providers.join('、') || '—'}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <CalendarClock className="size-3" />
+                    {lang === 'zh' ? '采集时间' : 'Acquisition'}
+                  </dt>
+                  <dd className="text-right text-xs">{acquisitionDates.join('、') || '—'}</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
           <section className="rounded-lg border border-border bg-card p-5">
-            <h3 className="tech-label mb-4 text-xs text-muted-foreground">{lang === 'zh' ? '订单明细' : 'Order items'}</h3>
+            <h3 className="tech-label mb-4 text-xs text-muted-foreground">
+              {lang === 'zh' ? '订单明细' : 'Order items'}
+            </h3>
             {(order.items?.length ?? 0) === 0 ? (
-              <p className="text-sm text-muted-foreground">{lang === 'zh' ? '该订单暂无可展开的商品明细' : 'No line-item details are available for this order.'}</p>
+              <p className="text-sm text-muted-foreground">
+                {lang === 'zh'
+                  ? '该订单暂无可展开的商品明细'
+                  : 'No line-item details are available for this order.'}
+              </p>
             ) : (
               <div className="space-y-2">
                 {order.items.map((item) => {
                   const snapshot = item.productSnapshot ?? {};
-                  const productName = typeof snapshot.productName === 'string' && snapshot.productName ? snapshot.productName : item.itemType;
-                  const region = typeof snapshot.region === 'string' ? snapshot.region : '';
+                  const productName =
+                    typeof snapshot.productName === 'string' && snapshot.productName
+                      ? snapshot.productName
+                      : item.itemType;
+                  const region = snapshotText(snapshot, [
+                    'region',
+                    'regionName',
+                    'area',
+                    'targetArea',
+                  ]);
+                  const dataType = snapshotText(snapshot, [
+                    'dataType',
+                    'sensorType',
+                    'productType',
+                  ]);
+                  const resolution = snapshotText(snapshot, [
+                    'resolution',
+                    'gsd',
+                    'spatialResolution',
+                  ]);
+                  const provider = snapshotText(snapshot, ['provider', 'providerName', 'source']);
+                  const bbox = snapshotBBox(snapshot);
                   return (
-                    <div key={item.id} className="flex items-start justify-between gap-3 border-b border-border pb-2 last:border-0 last:pb-0">
+                    <div
+                      key={item.id}
+                      className="flex items-start justify-between gap-3 border-b border-border pb-2 last:border-0 last:pb-0"
+                    >
                       <div className="min-w-0">
                         <p className="truncate text-sm">{productName}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {region ? `${region} · ` : ''}{lang === 'zh' ? '数量' : 'Qty'} {item.quantity}
+                          {region ? `${region} · ` : ''}
+                          {lang === 'zh' ? '数量' : 'Qty'} {item.quantity}
                         </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {[dataType, resolution, provider].filter(Boolean).join(' · ') ||
+                            (lang === 'zh' ? '暂无产品元数据' : 'No product metadata')}
+                        </p>
+                        {bbox && (
+                          <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                            BBox {bbox}
+                          </p>
+                        )}
                       </div>
-                      <span className="shrink-0 font-mono text-sm">{item.unitPrice.toLocaleString()} {item.currency}</span>
+                      <span className="shrink-0 font-mono text-sm">
+                        {item.unitPrice.toLocaleString()} {item.currency}
+                      </span>
                     </div>
                   );
                 })}
@@ -297,31 +499,60 @@ function ServerOrderDetail({ order, lang, navigate }: { order: ServerOrder; lang
             )}
           </section>
           <section className="rounded-lg border border-border bg-card p-5 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">{lang === 'zh' ? '支付状态' : 'Payment status'}</span><span>{order.paymentStatus}</span></div>
-            <div className="mt-3 flex justify-between"><span className="text-muted-foreground">{lang === 'zh' ? '创建时间' : 'Created'}</span><span>{new Date(order.createdAt).toLocaleString(lang)}</span></div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">
+                {lang === 'zh' ? '支付状态' : 'Payment status'}
+              </span>
+              <span>{order.paymentStatus}</span>
+            </div>
+            <div className="mt-3 flex justify-between">
+              <span className="text-muted-foreground">
+                {lang === 'zh' ? '创建时间' : 'Created'}
+              </span>
+              <span>{new Date(order.createdAt).toLocaleString(lang)}</span>
+            </div>
           </section>
           {order.status === 'delivered' && (
             <section className="rounded-lg border border-border bg-card p-5">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="tech-label text-xs text-muted-foreground">{lang === 'zh' ? '交付文件' : 'Delivery files'}</h3>
+                <h3 className="tech-label text-xs text-muted-foreground">
+                  {lang === 'zh' ? '交付文件' : 'Delivery files'}
+                </h3>
                 <span className="text-xs text-muted-foreground">{assets.length}</span>
               </div>
               {assetsLoading ? (
-                <p className="mt-4 text-sm text-muted-foreground">{lang === 'zh' ? '加载文件中…' : 'Loading files…'}</p>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  {lang === 'zh' ? '加载文件中…' : 'Loading files…'}
+                </p>
               ) : assetsError ? (
-                <p className="mt-4 text-sm text-destructive">{lang === 'zh' ? '交付文件暂时不可用' : 'Delivery files are temporarily unavailable'}</p>
+                <p className="mt-4 text-sm text-destructive">
+                  {lang === 'zh'
+                    ? '交付文件暂时不可用'
+                    : 'Delivery files are temporarily unavailable'}
+                </p>
               ) : assets.length === 0 ? (
-                <p className="mt-4 text-sm text-muted-foreground">{lang === 'zh' ? '文件准备中' : 'Files are being prepared'}</p>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  {lang === 'zh' ? '文件准备中' : 'Files are being prepared'}
+                </p>
               ) : (
                 <div className="mt-4 space-y-2">
                   {assets.map((asset) => (
-                    <div key={asset.id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-panel p-3">
+                    <div
+                      key={asset.id}
+                      className="flex items-center justify-between gap-3 rounded-md border border-border bg-panel p-3"
+                    >
                       <div className="min-w-0">
                         <p className="truncate text-sm">{asset.fileName}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{asset.contentType} · {formatBytes(asset.sizeBytes)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {asset.contentType} · {formatBytes(asset.sizeBytes)}
+                        </p>
                       </div>
                       <Button asChild size="sm" variant="outline" className="shrink-0">
-                        <a href={`/api/orders/${encodeURIComponent(order.id)}/delivery-assets/${encodeURIComponent(asset.id)}/download`} target="_blank" rel="noreferrer">
+                        <a
+                          href={`/api/orders/${encodeURIComponent(order.id)}/delivery-assets/${encodeURIComponent(asset.id)}/download`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
                           <Download className="size-3.5" />
                           {lang === 'zh' ? '下载' : 'Download'}
                         </a>
@@ -330,7 +561,11 @@ function ServerOrderDetail({ order, lang, navigate }: { order: ServerOrder; lang
                   ))}
                 </div>
               )}
-              <p className="mt-3 text-xs text-muted-foreground">{lang === 'zh' ? '下载链接仅短时有效，点击下载时实时签发。' : 'Links are short-lived and issued when you download.'}</p>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {lang === 'zh'
+                  ? '下载链接仅短时有效，点击下载时实时签发。'
+                  : 'Links are short-lived and issued when you download.'}
+              </p>
             </section>
           )}
         </div>
