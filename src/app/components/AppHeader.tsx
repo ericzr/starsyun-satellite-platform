@@ -1,6 +1,6 @@
 import { Link, NavLink, useNavigate } from 'react-router';
 import { useTheme } from 'next-themes';
-import { Menu, ShoppingCart, Package, User, LogOut, Settings, FileText, LogIn } from 'lucide-react';
+import { Activity, Menu, User, LogOut, LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { useI18n } from '../i18n';
 import { useCart } from '../context/CartContext';
@@ -30,6 +30,10 @@ export function AppHeader() {
     navigate('/');
   };
 
+  const openAnalysis = () => {
+    navigate('/analysis');
+  };
+
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-4 px-4 sm:gap-6 sm:px-6">
@@ -39,6 +43,10 @@ export function AppHeader() {
 
         {/* Desktop Navigation */}
         <div className="ml-auto hidden items-center gap-2 sm:flex">
+          <Button variant="ghost" size="sm" className="gap-1.5 text-xs" onClick={openAnalysis}>
+            <Activity className="size-3.5" />
+            {t.nav.analysis}
+          </Button>
           <LangToggle />
           <ThemeToggle />
           {isAuthenticated ? (
@@ -119,6 +127,14 @@ export function AppHeader() {
                 >
                   {t.nav.explore || '数据选择'}
                 </NavLink>
+                <button
+                  type="button"
+                  onClick={() => { setMobileOpen(false); openAnalysis(); }}
+                  className="flex items-center gap-2 rounded-md px-4 py-2 text-left text-sm transition-colors hover:bg-accent"
+                >
+                  <Activity className="size-4" />
+                  {t.nav.analysis}
+                </button>
                 {isAuthenticated ? (
                   <>
                     <NavLink

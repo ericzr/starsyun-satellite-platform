@@ -4,6 +4,7 @@ export const zh = {
   nav: {
     home: '首页',
     explore: '地图数据中心',
+    analysis: '分析服务',
     solutions: '解决方案',
     admin: '控制台',
     inquiry: '我的询价',

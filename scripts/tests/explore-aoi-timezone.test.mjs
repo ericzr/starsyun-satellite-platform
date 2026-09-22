@@ -181,3 +181,15 @@ test('footer has opaque non-scrolling surface; desktop and mobile wrappers are u
   assert.doesNotMatch(panel, /sticky bottom-0|bg-panel\/95/);
   assert.equal((explore.match(/className="min-h-0 flex-1"/g) || []).length, 2);
 });
+
+test('explore filter contract defaults to archive and keeps tasking explicit', async () => {
+  const panel = await readFile('src/app/components/FilterPanel.tsx', 'utf8');
+  const explore = await readFile('src/app/pages/Explore.tsx', 'utf8');
+  assert.match(panel, /categories: \['archive'\]/);
+  assert.match(panel, /nextTasking = tasking || value > today/);
+  assert.match(explore, /Request tasking feasibility|提交任务拍摄需求/);
+  assert.doesNotMatch(panel, /处理级别|Processing level|最迟交付|Latest delivery/);
+  assert.doesNotMatch(explore, /filters.processingLevels|filters.deliveryMaxDays|filters.analysisService/);
+  assert.doesNotMatch(explore, /case 'analysis'/);
+  assert.match(explore, /'pl',[\s\S]*'days',[\s\S]*'service'/);
+});

@@ -6,6 +6,7 @@ export const en: Translation = {
   nav: {
     home: 'Home',
     explore: 'Data Explorer',
+    analysis: 'Analysis service',
     solutions: 'Solutions',
     admin: 'Console',
     inquiry: 'My Inquiries',

@@ -22,8 +22,6 @@ import {
   type DataType,
   type Product,
   type ProductCategory,
-  type ProcessingLevel,
-  type ValueAddedService,
 } from '../data/products';
 import {
   coverageRatio,
@@ -106,7 +104,7 @@ function matchRegion(q: string) {
   );
 }
 
-type CategoryQuery = 'archive' | 'latest' | 'tasking' | 'sar' | 'dem' | 'analysis';
+type CategoryQuery = 'archive' | 'latest' | 'tasking' | 'sar' | 'dem';
 
 function dateOnly(value: Date) {
   return value.toISOString().slice(0, 10);
@@ -130,35 +128,15 @@ function filtersForCategory(value: string | null): Filters {
       return { ...base, dataTypes: ['sar'] };
     case 'dem':
       return { ...base, dataTypes: ['dem'] };
-    case 'analysis':
-      return { ...base, categories: ['analysis'] };
     default:
       return base;
   }
 }
 
-const FILTER_DATA_TYPES: DataType[] = [
-  'optical',
-  'multispectral',
-  'hyperspectral',
-  'sar',
-  'nightlight',
-  'dem',
-  'video',
-];
-const FILTER_CATEGORIES: ProductCategory[] = ['archive', 'tasking', 'analysis'];
-const FILTER_PROCESSING_LEVELS: ProcessingLevel[] = ['L1', 'L2', 'L3', 'L4'];
-const FILTER_SERVICES: ValueAddedService[] = [
-  'change-detection',
-  'land-cover',
-  'feature-extraction',
-  'time-series',
-  'custom-analysis',
-];
+const FILTER_CATEGORIES: ProductCategory[] = ['archive', 'tasking'];
 const FILTER_URL_KEYS = [
   'ptype',
   'dt',
-  'pl',
   'start',
   'end',
   'res',
@@ -166,9 +144,12 @@ const FILTER_URL_KEYS = [
   'cloud',
   'angle',
   'delivery',
+  'tz',
+  // Legacy filter keys are intentionally ignored and removed on the next
+  // apply/reset so old shared links cannot resurrect retired controls.
+  'pl',
   'days',
   'service',
-  'tz',
 ] as const;
 
 function parseListParam<T extends string>(value: string | null, allowed: readonly T[]): T[] {
@@ -190,8 +171,9 @@ function parseBoundedNumber(value: string | null, min: number, max: number) {
 
 function filtersFromSearchParams(params: URLSearchParams, categoryParam: string | null): Filters {
   const base = filtersForCategory(categoryParam);
-  const selectedCategory =
-    parseListParam(params.get('ptype'), FILTER_CATEGORIES)[0] ?? base.categories[0];
+  const selectedCategory = parseListParam(params.get('ptype'), FILTER_CATEGORIES)[0] ?? base.categories[0] ?? 'archive';
+  const allowedDataTypes: readonly DataType[] =
+    selectedCategory === 'tasking' ? ['optical', 'sar'] : ['multispectral'];
   const rawResolution = params.get('res');
   const resolutionIsCustom = rawResolution === 'custom';
   const presetResolution = ['all', '0.3', '0.5', '1', '2.5', '5', '10', '30'].includes(
@@ -202,8 +184,6 @@ function filtersFromSearchParams(params: URLSearchParams, categoryParam: string 
   const delivery = params.get('delivery');
   const deliveryMode =
     delivery === 'instant' || delivery === 'inquiry' ? delivery : base.deliveryMode;
-  const service = params.get('service');
-
   const captureTimeZone = validTimeZone(params.get('tz')) ? params.get('tz')! : 'UTC';
   const taskingMinDate =
     selectedCategory === 'tasking' ? todayInTimeZone(captureTimeZone) : undefined;
@@ -215,9 +195,8 @@ function filtersFromSearchParams(params: URLSearchParams, categoryParam: string 
     taskingMinDate && dateEnd && dateEnd < taskingMinDate ? taskingMinDate : dateEnd;
   return {
     ...base,
-    dataTypes: parseListParam(params.get('dt'), FILTER_DATA_TYPES),
-    categories: parseListParam(params.get('ptype'), FILTER_CATEGORIES).slice(0, 1),
-    processingLevels: parseListParam(params.get('pl'), FILTER_PROCESSING_LEVELS),
+    dataTypes: parseListParam(params.get('dt'), allowedDataTypes),
+    categories: [selectedCategory],
     dateStart: normalizedStart,
     dateEnd:
       normalizedStart && normalizedEnd && normalizedEnd < normalizedStart
@@ -230,12 +209,6 @@ function filtersFromSearchParams(params: URLSearchParams, categoryParam: string 
     cloudMax: parseBoundedNumber(params.get('cloud'), 0, 100) ?? base.cloudMax,
     offNadirMax: parseBoundedNumber(params.get('angle'), 0, 60) ?? base.offNadirMax,
     deliveryMode,
-    deliveryMaxDays: [7, 14, 30].includes(Number(params.get('days')))
-      ? Number(params.get('days'))
-      : undefined,
-    analysisService: FILTER_SERVICES.includes(service as ValueAddedService)
-      ? (service as ValueAddedService)
-      : undefined,
   };
 }
 
@@ -244,7 +217,6 @@ function syncFilterParams(params: URLSearchParams, filters: Filters) {
   FILTER_URL_KEYS.forEach((key) => next.delete(key));
   if (filters.categories[0]) next.set('ptype', filters.categories[0]);
   if (filters.dataTypes.length) next.set('dt', filters.dataTypes.join(','));
-  if (filters.processingLevels.length) next.set('pl', filters.processingLevels.join(','));
   if (filters.dateStart) next.set('start', filters.dateStart);
   if (filters.dateEnd) next.set('end', filters.dateEnd);
   if (filters.categories[0] === 'tasking') next.set('tz', filters.captureTimeZone ?? 'UTC');
@@ -258,8 +230,6 @@ function syncFilterParams(params: URLSearchParams, filters: Filters) {
   if (filters.offNadirMax < 60) next.set('angle', String(filters.offNadirMax));
   if (filters.deliveryMode && filters.deliveryMode !== 'all')
     next.set('delivery', filters.deliveryMode);
-  if (filters.deliveryMaxDays != null) next.set('days', String(filters.deliveryMaxDays));
-  if (filters.analysisService) next.set('service', filters.analysisService);
   return next;
 }
 
@@ -361,7 +331,6 @@ export function Explore() {
       ...value,
       dataTypes: [...value.dataTypes],
       categories: [...value.categories],
-      processingLevels: [...value.processingLevels],
     };
   }
 
@@ -747,12 +716,17 @@ export function Explore() {
   function renderAreaSelector() {
     const selectedGlobalCountry = globalCountries.find((country) => country.id === adminCountry);
     const selectedLevel1 = globalStates.find((state) => state.id === adminLevel1);
+    const selectedLevel2 = globalCities.find((city) => city.id === adminLevel2);
+    const selectedLevel3 = globalDistricts.find((district) => district.id === adminLevel3);
+    const areaSummary = vectorName
+      ? vectorName
+      : selectedLevel3?.name || selectedLevel2?.name || selectedLevel1?.name || selectedGlobalCountry?.name;
     return (
-      <div className="mt-3 space-y-3 border-t border-border pt-3">
-        <div className="flex items-center gap-1 rounded-md border border-border bg-input-background p-1">
+      <div className="mt-2 space-y-2 border-t border-border pt-2">
+        <div className="flex items-center gap-1">
           <button
             type="button"
-            className={`flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded px-2 text-xs transition-colors ${selectionMode === 'admin' && areaSelectorOpen ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            className={`flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2 text-left text-xs transition-colors ${selectionMode === 'admin' && areaSelectorOpen ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'}`}
             onClick={() => {
               const wasAdmin = selectionMode === 'admin';
               setSelectionMode('admin');
@@ -761,14 +735,14 @@ export function Explore() {
             aria-expanded={selectionMode === 'admin' ? areaSelectorOpen : false}
           >
             <MapPinned className="size-3.5 shrink-0" />
-            <span>{t.explore.areaSelection}</span>
+            <span className="min-w-0 flex-1 truncate">{areaSummary || t.explore.areaSelection}</span>
             <ChevronDown
               className={`size-3 shrink-0 transition-transform ${selectionMode === 'admin' && areaSelectorOpen ? 'rotate-180' : ''}`}
             />
           </button>
           <button
             type="button"
-            className={`flex size-9 shrink-0 items-center justify-center rounded transition-colors ${selectionMode === 'vector' && areaSelectorOpen ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            className={`flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors ${selectionMode === 'vector' && areaSelectorOpen ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'}`}
             onClick={() => {
               setSelectionMode('vector');
               setAreaSelectorOpen((open) => selectionMode !== 'vector' || !open);
@@ -1021,8 +995,7 @@ export function Explore() {
   const remoteDatetime = datetimeForFilters(filters);
   const remoteCloudCoverMax = filters.cloudMax >= 100 ? undefined : filters.cloudMax;
   const remoteOffNadirMax = filters.offNadirMax >= 60 ? undefined : filters.offNadirMax;
-  const canQueryArchiveSource =
-    filters.categories.length === 0 || filters.categories.includes('archive');
+  const canQueryArchiveSource = filters.categories[0] === 'archive';
 
   useEffect(() => {
     if (!remoteBbox || !canQueryArchiveSource) {
@@ -1073,7 +1046,6 @@ export function Explore() {
     const remoteIds = new Set(remoteProducts.map((product) => product.id));
     return [...remoteProducts, ...catalog.filter((product) => !remoteIds.has(product.id))];
   }, [catalogProducts, demoDataEnabled, remoteProducts]);
-  const isRemote = remoteProducts !== null;
   const isDemoProducts =
     remoteProducts === null &&
     demoDataEnabled &&
@@ -1084,8 +1056,6 @@ export function Explore() {
     if (aoi) list = list.filter((p) => intersects(aoi, p.bbox));
     if (filters.categories.length)
       list = list.filter((p) => filters.categories.includes(p.category));
-    if (filters.processingLevels.length)
-      list = list.filter((p) => filters.processingLevels.includes(p.processingLevel));
     if (filters.dataTypes.length) list = list.filter((p) => filters.dataTypes.includes(p.dataType));
 
     // 分辨率筛选
@@ -1105,13 +1075,6 @@ export function Explore() {
       list = list.filter((p) => p.incidence == null || p.incidence <= filters.offNadirMax);
     if (filters.deliveryMode === 'instant') list = list.filter((p) => p.purchaseType === 'instant');
     if (filters.deliveryMode === 'inquiry') list = list.filter((p) => p.purchaseType === 'inquiry');
-    if (filters.deliveryMaxDays !== undefined) {
-      list = list.filter((p) => p.deliveryDays <= filters.deliveryMaxDays!);
-    }
-    if (filters.analysisService) {
-      list = list.filter((p) => p.availableServices?.includes(filters.analysisService!));
-    }
-
     // 时间筛选
     if (filters.categories[0] !== 'tasking' && (filters.dateStart || filters.dateEnd)) {
       const first = filters.dateStart || filters.dateEnd!;
@@ -1126,7 +1089,7 @@ export function Explore() {
     }
 
     return [...list].sort((a, b) => (a.captureTime < b.captureTime ? 1 : -1));
-  }, [aoi, filters, isDemoProducts, isRemote, regionId, sourceProducts]);
+  }, [aoi, filters, isDemoProducts, regionId, sourceProducts]);
 
   const footprints: Footprint[] = useMemo(
     () => results.map((p) => ({ id: p.id, bbox: p.bbox })),
@@ -1173,6 +1136,23 @@ export function Explore() {
       expectRes: `≤ ${p.resolution}m`,
     });
     navigate('/inquiry/new');
+  }
+
+  function startTaskingInquiry() {
+    setDraft({
+      type: 'tasking',
+      captureStart: filters.dateStart,
+      captureEnd: filters.dateEnd,
+      captureTimeZone: filters.captureTimeZone ?? 'UTC',
+      aoiGeometry: boundary?.geometry ?? (aoi ? bboxToPolygon(aoi).geometry : undefined),
+      areaKm2: aoi ? Math.round(areaKm2) : undefined,
+      expectRes: filters.resMax !== 'all' ? `≤ ${filters.resMax}m` : undefined,
+    });
+    navigate('/inquiry/new');
+  }
+
+  function openAnalysisEntry() {
+    navigate('/analysis');
   }
 
   function buyProduct(p: Product) {
@@ -1461,8 +1441,22 @@ export function Explore() {
         </div>
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {results.length === 0 && (
-            <div className="pt-16 text-center text-sm text-muted-foreground">
-              {t.common.noResults}
+            <div className="mx-auto max-w-xs pt-12 text-center">
+              <p className="text-sm text-muted-foreground">
+                {filters.categories[0] === 'tasking'
+                  ? lang === 'zh'
+                    ? '当前条件需要向供应商询价，尚无可直接展示的任务结果。'
+                    : 'This window requires a provider feasibility check; no tasking results are listed yet.'
+                  : t.common.noResults}
+              </p>
+              {filters.categories[0] === 'tasking' && (
+                <Button type="button" size="sm" className="mt-4" onClick={startTaskingInquiry}>
+                  {lang === 'zh' ? '提交任务拍摄需求' : 'Request tasking feasibility'}
+                </Button>
+              )}
+              <button type="button" className="mt-3 block w-full text-xs text-primary hover:underline" onClick={openAnalysisEntry}>
+                {lang === 'zh' ? '已有影像？进入分析服务' : 'Have imagery? Open analysis service'}
+              </button>
             </div>
           )}
           {results.map((p) => (
@@ -1533,8 +1527,22 @@ export function Explore() {
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
               {results.length === 0 && (
-                <div className="pt-16 text-center text-sm text-muted-foreground">
-                  {t.common.noResults}
+                <div className="mx-auto max-w-xs pt-12 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    {filters.categories[0] === 'tasking'
+                      ? lang === 'zh'
+                        ? '当前条件需要向供应商询价，尚无可直接展示的任务结果。'
+                        : 'This window requires a provider feasibility check; no tasking results are listed yet.'
+                      : t.common.noResults}
+                  </p>
+                  {filters.categories[0] === 'tasking' && (
+                    <Button type="button" size="sm" className="mt-4" onClick={startTaskingInquiry}>
+                      {lang === 'zh' ? '提交任务拍摄需求' : 'Request tasking feasibility'}
+                    </Button>
+                  )}
+                  <button type="button" className="mt-3 block w-full text-xs text-primary hover:underline" onClick={openAnalysisEntry}>
+                    {lang === 'zh' ? '已有影像？进入分析服务' : 'Have imagery? Open analysis service'}
+                  </button>
                 </div>
               )}
               {results.map((p) => (

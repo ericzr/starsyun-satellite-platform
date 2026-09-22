@@ -9,6 +9,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppHeader } from './components/AppHeader';
 import { Home } from './pages/Home';
 import { Explore } from './pages/Explore';
+import { Analysis } from './pages/Analysis';
 import { ProductDetail } from './pages/ProductDetail';
 import { Inquiry } from './pages/Inquiry';
 import { InquiryList } from './pages/InquiryList';
@@ -44,6 +45,7 @@ export default function App() {
                     <Routes>
                       <Route path="/" element={<Home />} />
                       <Route path="/explore" element={<Explore />} />
+                      <Route path="/analysis" element={<Analysis />} />
                       <Route path="/product/:id" element={<ProductDetail />} />
                       <Route path="/login" element={<Login />} />
                       <Route
