@@ -5,6 +5,8 @@ import { useTheme } from 'next-themes';
 import { useI18n, type Lang } from '../i18n';
 import type { BBox } from '../lib/geo';
 import { bboxToPolygon } from '../lib/geo';
+import { makeDrawnPolygon, unwrapPoint, type DrawPoint } from '../lib/draw-polygon';
+import { Button } from './ui/button';
 
 type MlMap = ML.Map;
 type LngLatBoundsLike = ML.LngLatBoundsLike;
@@ -36,15 +38,23 @@ function loadMapLibre(): Promise<typeof ML> {
       link.rel = 'stylesheet';
       link.href = CDN_CSS[0];
       link.setAttribute('data-maplibre', '');
-      link.onerror = () => { link.href = CDN_CSS[1]; };
+      link.onerror = () => {
+        link.href = CDN_CSS[1];
+      };
       document.head.appendChild(link);
     }
 
     const loadScript = (index: number) => {
-      const existing = document.querySelector<HTMLScriptElement>(`script[data-maplibre="${index}"]`);
+      const existing = document.querySelector<HTMLScriptElement>(
+        `script[data-maplibre="${index}"]`,
+      );
       if (existing) {
         existing.addEventListener('load', () => resolve((window as any).maplibregl));
-        existing.addEventListener('error', () => index + 1 < CDN_JS.length ? loadScript(index + 1) : reject(new Error('Failed to load MapLibre GL')));
+        existing.addEventListener('error', () =>
+          index + 1 < CDN_JS.length
+            ? loadScript(index + 1)
+            : reject(new Error('Failed to load MapLibre GL')),
+        );
         return;
       }
       const script = document.createElement('script');
@@ -81,19 +91,40 @@ const CARTO_STYLE_URL = (import.meta.env.VITE_MAP_STYLE_URL as string | undefine
 const OSM_STYLES: Record<'light' | 'dark', ML.StyleSpecification> = {
   light: {
     version: 8,
-    sources: { osm: { type: 'raster', tiles: [OSM_TILES], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
+    sources: {
+      osm: {
+        type: 'raster',
+        tiles: [OSM_TILES],
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors',
+      },
+    },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#e5e7eb' } },
-      { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-opacity': 0.92, 'raster-fade-duration': 0 } },
+      {
+        id: 'osm',
+        type: 'raster',
+        source: 'osm',
+        paint: { 'raster-opacity': 0.92, 'raster-fade-duration': 0 },
+      },
     ],
   },
   dark: {
     version: 8,
-    sources: { osm: { type: 'raster', tiles: [OSM_TILES], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
+    sources: {
+      osm: {
+        type: 'raster',
+        tiles: [OSM_TILES],
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors',
+      },
+    },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#08090b' } },
       {
-        id: 'osm', type: 'raster', source: 'osm',
+        id: 'osm',
+        type: 'raster',
+        source: 'osm',
         paint: {
           'raster-opacity': 0.78,
           'raster-saturation': -1,
@@ -110,14 +141,22 @@ const OSM_STYLES: Record<'light' | 'dark', ML.StyleSpecification> = {
 type BaseLayerMode = 'carto' | 'openfreemap' | 'osm';
 
 function cartoStyleUrl(theme: 'light' | 'dark') {
-  const configured = CARTO_STYLE_URL || `https://basemaps.cartocdn.com/gl/${theme === 'dark' ? 'dark-matter' : 'positron'}-gl-style/style.json`;
+  const configured =
+    CARTO_STYLE_URL ||
+    `https://basemaps.cartocdn.com/gl/${theme === 'dark' ? 'dark-matter' : 'positron'}-gl-style/style.json`;
   if (!CARTO_KEY) return OPENFREEMAP_STYLES[theme];
-  const url = configured.replace(/(dark-matter|positron)(?=-gl-style)/, theme === 'dark' ? 'dark-matter' : 'positron');
+  const url = configured.replace(
+    /(dark-matter|positron)(?=-gl-style)/,
+    theme === 'dark' ? 'dark-matter' : 'positron',
+  );
   const separator = url.includes('?') ? '&' : '?';
   return `${url}${separator}api_key=${encodeURIComponent(CARTO_KEY)}`;
 }
 
-function getBasemapStyle(mode: BaseLayerMode, theme: 'light' | 'dark'): ML.StyleSpecification | string {
+function getBasemapStyle(
+  mode: BaseLayerMode,
+  theme: 'light' | 'dark',
+): ML.StyleSpecification | string {
   if (mode === 'osm') return OSM_STYLES[theme];
   if (mode === 'openfreemap') return OPENFREEMAP_STYLES[theme];
   return cartoStyleUrl(theme);
@@ -128,10 +167,12 @@ const NASA_VIIRS_TILES = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VII
 // Public imagery mosaics. These are optional overlays and do not replace the
 // selected monochrome basemap, so the explorer remains usable when an imagery
 // provider is unavailable.
-const SENTINEL2_TILES = (import.meta.env.VITE_SENTINEL2_TILES_URL as string | undefined)?.trim()
-  || 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg';
-const ESRI_IMAGERY_TILES = (import.meta.env.VITE_ESRI_IMAGERY_TILES_URL as string | undefined)?.trim()
-  || 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const SENTINEL2_TILES =
+  (import.meta.env.VITE_SENTINEL2_TILES_URL as string | undefined)?.trim() ||
+  'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg';
+const ESRI_IMAGERY_TILES =
+  (import.meta.env.VITE_ESRI_IMAGERY_TILES_URL as string | undefined)?.trim() ||
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const AICGIS_TILES = (import.meta.env.VITE_AICGIS_TILES_URL as string | undefined)?.trim();
 const TIANDITU_TOKEN = (import.meta.env.VITE_TIANDITU_TOKEN as string | undefined)?.trim();
 const TIANDITU_TILES = TIANDITU_TOKEN
@@ -155,9 +196,11 @@ interface MapCanvasProps {
   footprints?: Footprint[];
   highlightId?: string | null;
   drawing?: boolean;
+  drawingMode?: 'rectangle' | 'polygon';
+  onDrawCancel?: () => void;
   focus?: { center: [number, number]; zoom: number; key: number } | null;
   fitBBox?: BBox | null;
-  onDraw?: (bbox: BBox) => void;
+  onDraw?: (bbox: BBox, polygon?: GeoJSON.Feature<GeoJSON.Polygon>) => void;
   onFootprintClick?: (id: string) => void;
   onFootprintHover?: (id: string | null) => void;
 }
@@ -205,6 +248,8 @@ export function MapCanvas({
   footprints = [],
   highlightId = null,
   drawing = false,
+  drawingMode = 'rectangle',
+  onDrawCancel,
   focus = null,
   fitBBox = null,
   onDraw,
@@ -222,8 +267,49 @@ export function MapCanvas({
   const [layerMenuOpen, setLayerMenuOpen] = useState(false);
 
   // keep latest props for event handlers
-  const propsRef = useRef({ drawing, onDraw, onFootprintClick, onFootprintHover });
-  propsRef.current = { drawing, onDraw, onFootprintClick, onFootprintHover };
+  const propsRef = useRef({ drawing, drawingMode, onDraw, onFootprintClick, onFootprintHover });
+  propsRef.current = { drawing, drawingMode, onDraw, onFootprintClick, onFootprintHover };
+  const vertices = useRef<DrawPoint[]>([]);
+  const [vertexCount, setVertexCount] = useState(0);
+  const [drawError, setDrawError] = useState(false);
+
+  function showPolygonDraft(map: MlMap, cursor?: DrawPoint) {
+    const points = cursor ? [...vertices.current, cursor] : vertices.current;
+    const source = map.getSource('draft') as ML.GeoJSONSource | undefined;
+    const features: GeoJSON.Feature[] = points.map((coordinates) => ({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'Point', coordinates },
+    }));
+    if (points.length >= 2)
+      features.push({
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: points.length >= 3 ? [...points, points[0]] : points,
+        },
+      });
+    source?.setData({ type: 'FeatureCollection', features });
+  }
+
+  function finishPolygon() {
+    try {
+      const result = makeDrawnPolygon(vertices.current);
+      onDraw?.(result.bbox, result.feature);
+      setDrawError(false);
+    } catch {
+      setDrawError(true);
+    }
+  }
+
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && drawing) onDrawCancel?.();
+    };
+    window.addEventListener('keydown', escape);
+    return () => window.removeEventListener('keydown', escape);
+  }, [drawing, onDrawCancel]);
   const focusRef = useRef(focus);
   focusRef.current = focus;
 
@@ -236,13 +322,22 @@ export function MapCanvas({
   baseLayerModeRef.current = baseLayerMode;
   const satelliteLayerRef = useRef<SatelliteLayerMode>(satelliteLayer);
   satelliteLayerRef.current = satelliteLayer;
-  const activeLayerLabel = satelliteLayer === 'nasa' ? t.explore.mapSatelliteNasa
-    : satelliteLayer === 'sentinel2' ? t.explore.mapSatelliteSentinel
-      : satelliteLayer === 'esri' ? t.explore.mapSatelliteEsri
-        : satelliteLayer === 'aicgis' ? t.explore.mapSatelliteAicgis
-          : satelliteLayer === 'tianditu' ? t.explore.mapSatelliteTianditu
-            : baseLayerMode === 'carto' ? t.explore.mapCartoLayer
-              : baseLayerMode === 'openfreemap' ? t.explore.mapOpenFreeMapLayer : t.explore.mapOsmLayer;
+  const activeLayerLabel =
+    satelliteLayer === 'nasa'
+      ? t.explore.mapSatelliteNasa
+      : satelliteLayer === 'sentinel2'
+        ? t.explore.mapSatelliteSentinel
+        : satelliteLayer === 'esri'
+          ? t.explore.mapSatelliteEsri
+          : satelliteLayer === 'aicgis'
+            ? t.explore.mapSatelliteAicgis
+            : satelliteLayer === 'tianditu'
+              ? t.explore.mapSatelliteTianditu
+              : baseLayerMode === 'carto'
+                ? t.explore.mapCartoLayer
+                : baseLayerMode === 'openfreemap'
+                  ? t.explore.mapOpenFreeMapLayer
+                  : t.explore.mapOsmLayer;
 
   // Initialize map once.
   useEffect(() => {
@@ -250,54 +345,61 @@ export function MapCanvas({
     let map: MlMap | null = null;
     let ro: ResizeObserver | null = null;
 
-    loadMapLibre().then((maplibregl) => {
-      if (cancelled || !containerRef.current || mapRef.current) return;
-      map = new maplibregl.Map({
-        container: containerRef.current,
-        style: getBasemapStyle(baseLayerModeRef.current, theme),
-        center,
-        zoom,
-        interactive,
-        attributionControl: false,
-      });
-      mapRef.current = map;
-      // Ignore benign abort errors emitted when tiles/styles are cancelled
-      // (e.g. on unmount or style swap).
-      map.on('error', (ev: { error?: { name?: string } }) => {
-        if (ev?.error?.name === 'AbortError') return;
-      });
-      if (interactive) {
-        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-      }
-      map.on('load', () => {
-        readyRef.current = true;
-        ensureLayers(map!, accentRef.current);
-        applyMapLanguage(map!, languageRef.current);
-        pushData(map!);
-        syncSatelliteLayer(map!, satelliteLayerRef.current);
-        const initialFocus = focusRef.current;
-        if (initialFocus) {
-          map!.flyTo({ center: initialFocus.center, zoom: initialFocus.zoom, speed: 1.4, essential: true });
+    loadMapLibre()
+      .then((maplibregl) => {
+        if (cancelled || !containerRef.current || mapRef.current) return;
+        map = new maplibregl.Map({
+          container: containerRef.current,
+          style: getBasemapStyle(baseLayerModeRef.current, theme),
+          center,
+          zoom,
+          interactive,
+          attributionControl: false,
+        });
+        mapRef.current = map;
+        // Ignore benign abort errors emitted when tiles/styles are cancelled
+        // (e.g. on unmount or style swap).
+        map.on('error', (ev: { error?: { name?: string } }) => {
+          if (ev?.error?.name === 'AbortError') return;
+        });
+        if (interactive) {
+          map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
         }
-      });
-      map.on('styledata', () => {
-        if (readyRef.current) {
+        map.on('load', () => {
+          readyRef.current = true;
           ensureLayers(map!, accentRef.current);
           applyMapLanguage(map!, languageRef.current);
           pushData(map!);
           syncSatelliteLayer(map!, satelliteLayerRef.current);
-        }
-      });
-      bindDrawing(map);
+          const initialFocus = focusRef.current;
+          if (initialFocus) {
+            map!.flyTo({
+              center: initialFocus.center,
+              zoom: initialFocus.zoom,
+              speed: 1.4,
+              essential: true,
+            });
+          }
+        });
+        map.on('styledata', () => {
+          if (readyRef.current) {
+            ensureLayers(map!, accentRef.current);
+            applyMapLanguage(map!, languageRef.current);
+            pushData(map!);
+            syncSatelliteLayer(map!, satelliteLayerRef.current);
+          }
+        });
+        bindDrawing(map);
 
-      ro = new ResizeObserver(() => map && map.resize());
-      ro.observe(containerRef.current);
-    }).catch((err: unknown) => {
-      // Swallow abort errors from teardown/HMR; surface anything unexpected.
-      if (err && (err as { name?: string }).name === 'AbortError') return;
-      // eslint-disable-next-line no-console
-      console.error('MapCanvas init failed', err);
-    });
+        ro = new ResizeObserver(() => map && map.resize());
+        ro.observe(containerRef.current);
+      })
+      .catch((err: unknown) => {
+        // Swallow abort errors from teardown/HMR; surface anything unexpected.
+        if (err && (err as { name?: string }).name === 'AbortError') return;
+        // eslint-disable-next-line no-console
+        console.error('MapCanvas init failed', err);
+      });
 
     return () => {
       cancelled = true;
@@ -367,14 +469,23 @@ export function MapCanvas({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    vertices.current = [];
+    setVertexCount(0);
+    setDrawError(false);
+    (map.getSource('draft') as ML.GeoJSONSource | undefined)?.setData({
+      type: 'FeatureCollection',
+      features: [],
+    });
     if (drawing) {
       map.dragPan.disable();
+      map.doubleClickZoom.disable();
       map.getCanvas().style.cursor = 'crosshair';
     } else {
       map.dragPan.enable();
+      map.doubleClickZoom.enable();
       map.getCanvas().style.cursor = '';
     }
-  }, [drawing]);
+  }, [drawing, drawingMode]);
 
   function pushData(map: MlMap) {
     const { aoi, boundary, footprints, highlightId } = dataRef.current;
@@ -408,38 +519,69 @@ export function MapCanvas({
   function bindDrawing(map: MlMap) {
     let start: ML.LngLat | null = null;
     const getDraft = () => map.getSource('draft') as ML.GeoJSONSource | undefined;
-    const normalizeLng = (lng: number) => ((lng + 180) % 360 + 360) % 360 - 180;
+    const normalizeLng = (lng: number) => ((((lng + 180) % 360) + 360) % 360) - 180;
     const makeBBox = (a: ML.LngLat, b: ML.LngLat): BBox => {
       const west = normalizeLng(a.lng);
       const east = normalizeLng(b.lng);
       const direct = Math.abs(east - west);
       // Preserve the narrow rectangle if the drag crossed the date line.
       if (direct <= 180) {
-        return [Math.min(west, east), Math.min(a.lat, b.lat), Math.max(west, east), Math.max(a.lat, b.lat)];
+        return [
+          Math.min(west, east),
+          Math.min(a.lat, b.lat),
+          Math.max(west, east),
+          Math.max(a.lat, b.lat),
+        ];
       }
       // Keep east > west in an unwrapped coordinate space (e.g. 179..181).
       const adjustedWest = west < east ? west + 360 : west;
       const adjustedEast = west < east ? east : east + 360;
-      return [Math.min(adjustedWest, adjustedEast), Math.min(a.lat, b.lat), Math.max(adjustedWest, adjustedEast), Math.max(a.lat, b.lat)];
+      return [
+        Math.min(adjustedWest, adjustedEast),
+        Math.min(a.lat, b.lat),
+        Math.max(adjustedWest, adjustedEast),
+        Math.max(a.lat, b.lat),
+      ];
     };
 
     map.on('mousedown', (e) => {
-      if (!propsRef.current.drawing) return;
+      if (!propsRef.current.drawing || propsRef.current.drawingMode !== 'rectangle') return;
       start = e.lngLat;
     });
     map.on('mousemove', (e) => {
+      if (propsRef.current.drawing && propsRef.current.drawingMode === 'polygon') {
+        showPolygonDraft(map, unwrapPoint([e.lngLat.lng, e.lngLat.lat], vertices.current.at(-1)));
+        return;
+      }
       if (!propsRef.current.drawing || !start) return;
       const bbox = makeBBox(start, e.lngLat);
       getDraft()?.setData({ type: 'FeatureCollection', features: [bboxToPolygon(bbox)] });
     });
     map.on('mouseup', (e) => {
-      if (!propsRef.current.drawing || !start) return;
+      if (!propsRef.current.drawing || propsRef.current.drawingMode !== 'rectangle' || !start)
+        return;
       const bbox = makeBBox(start, e.lngLat);
       start = null;
       getDraft()?.setData({ type: 'FeatureCollection', features: [] });
       if (Math.abs(bbox[2] - bbox[0]) > 0.001 && Math.abs(bbox[3] - bbox[1]) > 0.001) {
         propsRef.current.onDraw?.(bbox);
       }
+    });
+
+    map.on('click', (e) => {
+      if (
+        !propsRef.current.drawing ||
+        propsRef.current.drawingMode !== 'polygon' ||
+        vertices.current.length >= 500
+      )
+        return;
+      const point = unwrapPoint([e.lngLat.lng, e.lngLat.lat], vertices.current.at(-1));
+      const last = vertices.current.at(-1);
+      if (last && Math.abs(last[0] - point[0]) + Math.abs(last[1] - point[1]) < 1e-9) return;
+      vertices.current.push(point);
+      setVertexCount(vertices.current.length);
+      setDrawError(false);
+      showPolygonDraft(map);
     });
 
     // hover / click on footprints
@@ -454,6 +596,7 @@ export function MapCanvas({
       propsRef.current.onFootprintHover?.(null);
     });
     map.on('click', 'footprints-fill', (e) => {
+      if (propsRef.current.drawing) return;
       const id = e.features?.[0]?.properties?.id;
       if (id) propsRef.current.onFootprintClick?.(String(id));
     });
@@ -466,6 +609,36 @@ export function MapCanvas({
         className="absolute inset-0 size-full"
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
       />
+      {drawing && drawingMode === 'polygon' && (
+        <div className="absolute left-3 top-16 z-20 max-w-[calc(100%-1.5rem)] rounded-md border border-border bg-panel p-2 shadow-md">
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={vertexCount < 3} onClick={finishPolygon}>
+              {t.explore.finishPolygon} ({vertexCount})
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!vertexCount}
+              onClick={() => {
+                vertices.current.pop();
+                setVertexCount(vertices.current.length);
+                setDrawError(false);
+                if (mapRef.current) showPolygonDraft(mapRef.current);
+              }}
+            >
+              {t.explore.undoVertex}
+            </Button>
+            <Button size="sm" variant="outline" onClick={onDrawCancel}>
+              {t.common.cancel}
+            </Button>
+          </div>
+          {drawError && (
+            <p role="alert" className="mt-2 text-xs text-destructive">
+              {t.explore.invalidPolygon}
+            </p>
+          )}
+        </div>
+      )}
       <div className="pointer-events-none absolute bottom-3 right-16 z-10">
         <div className="pointer-events-auto relative">
           <button
@@ -481,21 +654,94 @@ export function MapCanvas({
           </button>
           {layerMenuOpen && (
             <div className="absolute bottom-11 right-0 min-w-44 rounded-md border border-border bg-card/95 p-1.5 text-xs text-foreground shadow-lg backdrop-blur">
-              <div className="px-2 pb-1 pt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{t.explore.mapBaseLayer}</div>
-              <LayerOption label={t.explore.mapCartoLayer} active={baseLayerMode === 'carto' && satelliteLayer === 'none'} onClick={() => { setBaseLayerMode('carto'); setSatelliteLayer('none'); setLayerMenuOpen(false); }} />
-              <LayerOption label={t.explore.mapOpenFreeMapLayer} active={baseLayerMode === 'openfreemap' && satelliteLayer === 'none'} onClick={() => { setBaseLayerMode('openfreemap'); setSatelliteLayer('none'); setLayerMenuOpen(false); }} />
-              <LayerOption label={t.explore.mapOsmLayer} active={baseLayerMode === 'osm' && satelliteLayer === 'none'} onClick={() => { setBaseLayerMode('osm'); setSatelliteLayer('none'); setLayerMenuOpen(false); }} />
-              <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">{t.explore.mapImagery}</div>
-              <LayerOption label={t.explore.mapSatelliteNasa} active={satelliteLayer === 'nasa'} onClick={() => { setSatelliteLayer('nasa'); setLayerMenuOpen(false); }} />
-              <LayerOption label={t.explore.mapSatelliteSentinel} active={satelliteLayer === 'sentinel2'} onClick={() => { setSatelliteLayer('sentinel2'); setLayerMenuOpen(false); }} />
-              <LayerOption label={t.explore.mapSatelliteEsri} active={satelliteLayer === 'esri'} onClick={() => { setSatelliteLayer('esri'); setLayerMenuOpen(false); }} />
-              <LayerOption label={t.explore.mapSatelliteAicgis} active={satelliteLayer === 'aicgis'} disabled={!AICGIS_TILES} onClick={() => { if (AICGIS_TILES) { setSatelliteLayer('aicgis'); setLayerMenuOpen(false); } }} />
-              <LayerOption label={t.explore.mapSatelliteTianditu} active={satelliteLayer === 'tianditu'} disabled={!TIANDITU_TILES} onClick={() => { if (TIANDITU_TILES) { setSatelliteLayer('tianditu'); setLayerMenuOpen(false); } }} />
-              <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">{t.explore.mapLicensedSources}</div>
+              <div className="px-2 pb-1 pt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                {t.explore.mapBaseLayer}
+              </div>
+              <LayerOption
+                label={t.explore.mapCartoLayer}
+                active={baseLayerMode === 'carto' && satelliteLayer === 'none'}
+                onClick={() => {
+                  setBaseLayerMode('carto');
+                  setSatelliteLayer('none');
+                  setLayerMenuOpen(false);
+                }}
+              />
+              <LayerOption
+                label={t.explore.mapOpenFreeMapLayer}
+                active={baseLayerMode === 'openfreemap' && satelliteLayer === 'none'}
+                onClick={() => {
+                  setBaseLayerMode('openfreemap');
+                  setSatelliteLayer('none');
+                  setLayerMenuOpen(false);
+                }}
+              />
+              <LayerOption
+                label={t.explore.mapOsmLayer}
+                active={baseLayerMode === 'osm' && satelliteLayer === 'none'}
+                onClick={() => {
+                  setBaseLayerMode('osm');
+                  setSatelliteLayer('none');
+                  setLayerMenuOpen(false);
+                }}
+              />
+              <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                {t.explore.mapImagery}
+              </div>
+              <LayerOption
+                label={t.explore.mapSatelliteNasa}
+                active={satelliteLayer === 'nasa'}
+                onClick={() => {
+                  setSatelliteLayer('nasa');
+                  setLayerMenuOpen(false);
+                }}
+              />
+              <LayerOption
+                label={t.explore.mapSatelliteSentinel}
+                active={satelliteLayer === 'sentinel2'}
+                onClick={() => {
+                  setSatelliteLayer('sentinel2');
+                  setLayerMenuOpen(false);
+                }}
+              />
+              <LayerOption
+                label={t.explore.mapSatelliteEsri}
+                active={satelliteLayer === 'esri'}
+                onClick={() => {
+                  setSatelliteLayer('esri');
+                  setLayerMenuOpen(false);
+                }}
+              />
+              <LayerOption
+                label={t.explore.mapSatelliteAicgis}
+                active={satelliteLayer === 'aicgis'}
+                disabled={!AICGIS_TILES}
+                onClick={() => {
+                  if (AICGIS_TILES) {
+                    setSatelliteLayer('aicgis');
+                    setLayerMenuOpen(false);
+                  }
+                }}
+              />
+              <LayerOption
+                label={t.explore.mapSatelliteTianditu}
+                active={satelliteLayer === 'tianditu'}
+                disabled={!TIANDITU_TILES}
+                onClick={() => {
+                  if (TIANDITU_TILES) {
+                    setSatelliteLayer('tianditu');
+                    setLayerMenuOpen(false);
+                  }
+                }}
+              />
+              <div className="mt-1 border-t border-border px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                {t.explore.mapLicensedSources}
+              </div>
               <LayerOption label={t.explore.mapGoogleEarth} disabled />
               <LayerOption label={t.explore.mapJilin1} disabled />
               <LayerOption label={t.explore.mapSiwei} disabled />
-              <div className="px-2 py-1 text-[11px] text-muted-foreground">{t.explore.mapLicensedSourcesHint}</div>
+              <div className="px-2 py-1 text-[11px] text-muted-foreground">
+                {t.explore.mapLicensedSourcesHint}
+              </div>
             </div>
           )}
         </div>
@@ -504,7 +750,17 @@ export function MapCanvas({
   );
 }
 
-function LayerOption({ label, active, onClick, disabled = false }: { label: string; active?: boolean; onClick?: () => void; disabled?: boolean }) {
+function LayerOption({
+  label,
+  active,
+  onClick,
+  disabled = false,
+}: {
+  label: string;
+  active?: boolean;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
@@ -562,7 +818,12 @@ function setTaiwanProvinceLabelLanguage(map: MlMap, preferredField: string) {
 function applyPlaceLabelHierarchy(map: MlMap) {
   const style = map.getStyle();
   for (const layer of style.layers ?? []) {
-    const placeLayer = layer as typeof layer & { 'source-layer'?: string; filter?: unknown; minzoom?: number; maxzoom?: number };
+    const placeLayer = layer as typeof layer & {
+      'source-layer'?: string;
+      filter?: unknown;
+      minzoom?: number;
+      maxzoom?: number;
+    };
     if (placeLayer.type !== 'symbol' || placeLayer['source-layer'] !== 'place') continue;
 
     const rule = PLACE_LABEL_ZOOM_RULES.find(({ pattern }) => pattern.test(placeLayer.id));
@@ -571,11 +832,7 @@ function applyPlaceLabelHierarchy(map: MlMap) {
       // local-label layer. The platform hierarchy can only make it stricter.
       const minZoom = Math.max(rule.min, placeLayer.minzoom ?? 0);
       const maxZoom = Math.max(minZoom, Math.min(rule.max, placeLayer.maxzoom ?? 24));
-      map.setLayerZoomRange(
-        placeLayer.id,
-        minZoom,
-        maxZoom,
-      );
+      map.setLayerZoomRange(placeLayer.id, minZoom, maxZoom);
     }
 
     // Upstream OpenStreetMap-derived styles classify Taiwan as an ADM0 label.
@@ -631,10 +888,22 @@ function ensureLayers(map: MlMap, accent: string) {
     });
   }
   if (AICGIS_TILES && !map.getSource('aicgis')) {
-    map.addSource('aicgis', { type: 'raster', tiles: [AICGIS_TILES], tileSize: 256, maxzoom: 18, attribution: 'AICGIS' });
+    map.addSource('aicgis', {
+      type: 'raster',
+      tiles: [AICGIS_TILES],
+      tileSize: 256,
+      maxzoom: 18,
+      attribution: 'AICGIS',
+    });
   }
   if (TIANDITU_TILES && !map.getSource('tianditu')) {
-    map.addSource('tianditu', { type: 'raster', tiles: [TIANDITU_TILES], tileSize: 256, maxzoom: 18, attribution: '天地图' });
+    map.addSource('tianditu', {
+      type: 'raster',
+      tiles: [TIANDITU_TILES],
+      tileSize: 256,
+      maxzoom: 18,
+      attribution: '天地图',
+    });
   }
   if (!map.getLayer('nasa-viirs-layer')) {
     map.addLayer({
@@ -664,10 +933,22 @@ function ensureLayers(map: MlMap, accent: string) {
     });
   }
   if (AICGIS_TILES && !map.getLayer('aicgis-layer')) {
-    map.addLayer({ id: 'aicgis-layer', type: 'raster', source: 'aicgis', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.86, 'raster-fade-duration': 0 } });
+    map.addLayer({
+      id: 'aicgis-layer',
+      type: 'raster',
+      source: 'aicgis',
+      layout: { visibility: 'none' },
+      paint: { 'raster-opacity': 0.86, 'raster-fade-duration': 0 },
+    });
   }
   if (TIANDITU_TILES && !map.getLayer('tianditu-layer')) {
-    map.addLayer({ id: 'tianditu-layer', type: 'raster', source: 'tianditu', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.86, 'raster-fade-duration': 0 } });
+    map.addLayer({
+      id: 'tianditu-layer',
+      type: 'raster',
+      source: 'tianditu',
+      layout: { visibility: 'none' },
+      paint: { 'raster-opacity': 0.86, 'raster-fade-duration': 0 },
+    });
   }
   if (!map.getSource('footprints')) map.addSource('footprints', { type: 'geojson', data: empty });
   if (!map.getSource('aoi')) map.addSource('aoi', { type: 'geojson', data: empty });
@@ -751,6 +1032,20 @@ function ensureLayers(map: MlMap, accent: string) {
       paint: { 'line-color': accent, 'line-width': 1.5, 'line-dasharray': [1, 1] },
     });
   }
+  if (!map.getLayer('draft-vertices')) {
+    map.addLayer({
+      id: 'draft-vertices',
+      type: 'circle',
+      source: 'draft',
+      filter: ['==', '$type', 'Point'],
+      paint: {
+        'circle-radius': 4,
+        'circle-color': accent,
+        'circle-stroke-color': '#808080',
+        'circle-stroke-width': 1,
+      },
+    });
+  }
   if (!map.getLayer('taiwan-province-label')) {
     map.addLayer({
       id: 'taiwan-province-label',
@@ -782,7 +1077,11 @@ function syncSatelliteLayer(map: MlMap, mode: SatelliteLayerMode) {
     aicgis: 'aicgis-layer',
     tianditu: 'tianditu-layer',
   };
-  for (const [key, layerId] of Object.entries(layers) as [Exclude<SatelliteLayerMode, 'none'>, string][]) {
-    if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', key === mode ? 'visible' : 'none');
+  for (const [key, layerId] of Object.entries(layers) as [
+    Exclude<SatelliteLayerMode, 'none'>,
+    string,
+  ][]) {
+    if (map.getLayer(layerId))
+      map.setLayoutProperty(layerId, 'visibility', key === mode ? 'visible' : 'none');
   }
 }

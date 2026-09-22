@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import {
   Search,
   Square,
+  Pentagon,
   Trash2,
   GitCompare,
   Crosshair,
@@ -32,6 +33,7 @@ import {
   fmtArea,
   parseCoords,
   parseVectorFile,
+  bboxToPolygon,
   type BBox,
 } from '../lib/geo';
 import { MapCanvas, type Footprint } from '../components/MapCanvas';
@@ -57,6 +59,7 @@ import {
   type GlobalState,
 } from '../services/admin';
 import { toast } from 'sonner';
+import { todayInTimeZone, validTimeZone } from '../lib/capture-window';
 
 function countryLabel(country: GlobalCountry) {
   return country.name;
@@ -165,6 +168,7 @@ const FILTER_URL_KEYS = [
   'delivery',
   'days',
   'service',
+  'tz',
 ] as const;
 
 function parseListParam<T extends string>(value: string | null, allowed: readonly T[]): T[] {
@@ -186,6 +190,8 @@ function parseBoundedNumber(value: string | null, min: number, max: number) {
 
 function filtersFromSearchParams(params: URLSearchParams, categoryParam: string | null): Filters {
   const base = filtersForCategory(categoryParam);
+  const selectedCategory =
+    parseListParam(params.get('ptype'), FILTER_CATEGORIES)[0] ?? base.categories[0];
   const rawResolution = params.get('res');
   const resolutionIsCustom = rawResolution === 'custom';
   const presetResolution = ['all', '0.3', '0.5', '1', '2.5', '5', '10', '30'].includes(
@@ -198,13 +204,26 @@ function filtersFromSearchParams(params: URLSearchParams, categoryParam: string 
     delivery === 'instant' || delivery === 'inquiry' ? delivery : base.deliveryMode;
   const service = params.get('service');
 
+  const captureTimeZone = validTimeZone(params.get('tz')) ? params.get('tz')! : 'UTC';
+  const taskingMinDate =
+    selectedCategory === 'tasking' ? todayInTimeZone(captureTimeZone) : undefined;
+  const dateStart = params.get('start') || base.dateStart;
+  const dateEnd = params.get('end') || base.dateEnd;
+  const normalizedStart =
+    taskingMinDate && dateStart && dateStart < taskingMinDate ? taskingMinDate : dateStart;
+  const normalizedEnd =
+    taskingMinDate && dateEnd && dateEnd < taskingMinDate ? taskingMinDate : dateEnd;
   return {
     ...base,
     dataTypes: parseListParam(params.get('dt'), FILTER_DATA_TYPES),
     categories: parseListParam(params.get('ptype'), FILTER_CATEGORIES).slice(0, 1),
     processingLevels: parseListParam(params.get('pl'), FILTER_PROCESSING_LEVELS),
-    dateStart: params.get('start') || base.dateStart,
-    dateEnd: params.get('end') || base.dateEnd,
+    dateStart: normalizedStart,
+    dateEnd:
+      normalizedStart && normalizedEnd && normalizedEnd < normalizedStart
+        ? normalizedStart
+        : normalizedEnd,
+    captureTimeZone,
     resMode: resolutionIsCustom ? 'range' : 'preset',
     resMax: resolutionIsCustom ? 'all' : presetResolution,
     resMaxCustom: resolutionIsCustom ? parseBoundedNumber(params.get('rmax'), 0, 100) : undefined,
@@ -228,6 +247,7 @@ function syncFilterParams(params: URLSearchParams, filters: Filters) {
   if (filters.processingLevels.length) next.set('pl', filters.processingLevels.join(','));
   if (filters.dateStart) next.set('start', filters.dateStart);
   if (filters.dateEnd) next.set('end', filters.dateEnd);
+  if (filters.categories[0] === 'tasking') next.set('tz', filters.captureTimeZone ?? 'UTC');
   if (filters.resMode === 'range') {
     next.set('res', 'custom');
     if (filters.resMaxCustom != null) next.set('rmax', String(filters.resMaxCustom));
@@ -310,6 +330,7 @@ export function Explore() {
     GeoJSON.Polygon | GeoJSON.MultiPolygon
   > | null>(null);
   const [drawing, setDrawing] = useState(false);
+  const [drawingMode, setDrawingMode] = useState<'rectangle' | 'polygon'>('rectangle');
   const initialFilters = filtersFromSearchParams(params, categoryParam);
   const [draftFilters, setDraftFilters] = useState<Filters>(initialFilters);
   const [appliedFilters, setAppliedFilters] = useState<Filters>(initialFilters);
@@ -728,36 +749,36 @@ export function Explore() {
     const selectedLevel1 = globalStates.find((state) => state.id === adminLevel1);
     return (
       <div className="mt-3 space-y-3 border-t border-border pt-3">
-        <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-input-background p-1">
-          {(
-            [
-              ['admin', MapPinned, t.explore.adminRegion],
-              ['vector', Upload, t.explore.uploadVector],
-            ] as const
-          ).map(([mode, Icon, label]) => (
-            <button
-              key={mode}
-              type="button"
-              className={`flex h-9 min-w-0 items-center justify-center gap-1.5 rounded px-2 text-xs transition-colors ${selectionMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-              onClick={() => {
-                if (selectionMode === mode) setAreaSelectorOpen((open) => !open);
-                else {
-                  setSelectionMode(mode);
-                  setAreaSelectorOpen(true);
-                }
-              }}
-              title={label}
-              aria-expanded={selectionMode === mode ? areaSelectorOpen : undefined}
-            >
-              <Icon className="size-3.5 shrink-0" />
-              <span className="truncate">{label}</span>
-              {selectionMode === mode && (
-                <ChevronDown
-                  className={`size-3 shrink-0 transition-transform ${areaSelectorOpen ? 'rotate-180' : ''}`}
-                />
-              )}
-            </button>
-          ))}
+        <div className="flex items-center gap-1 rounded-md border border-border bg-input-background p-1">
+          <button
+            type="button"
+            className={`flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded px-2 text-xs transition-colors ${selectionMode === 'admin' && areaSelectorOpen ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            onClick={() => {
+              const wasAdmin = selectionMode === 'admin';
+              setSelectionMode('admin');
+              setAreaSelectorOpen((open) => (wasAdmin ? !open : true));
+            }}
+            aria-expanded={selectionMode === 'admin' ? areaSelectorOpen : false}
+          >
+            <MapPinned className="size-3.5 shrink-0" />
+            <span>{t.explore.areaSelection}</span>
+            <ChevronDown
+              className={`size-3 shrink-0 transition-transform ${selectionMode === 'admin' && areaSelectorOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          <button
+            type="button"
+            className={`flex size-9 shrink-0 items-center justify-center rounded transition-colors ${selectionMode === 'vector' && areaSelectorOpen ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            onClick={() => {
+              setSelectionMode('vector');
+              setAreaSelectorOpen((open) => selectionMode !== 'vector' || !open);
+            }}
+            title={t.explore.uploadVector}
+            aria-label={t.explore.uploadVector}
+            aria-expanded={selectionMode === 'vector' ? areaSelectorOpen : false}
+          >
+            <Upload className="size-3.5" />
+          </button>
         </div>
         {selectionMode === 'admin' && areaSelectorOpen && (
           <div className="space-y-2">
@@ -1092,7 +1113,7 @@ export function Explore() {
     }
 
     // 时间筛选
-    if (filters.dateStart || filters.dateEnd) {
+    if (filters.categories[0] !== 'tasking' && (filters.dateStart || filters.dateEnd)) {
       const first = filters.dateStart || filters.dateEnd!;
       const second = filters.dateEnd || filters.dateStart!;
       const [startDate, endDate] = first <= second ? [first, second] : [second, first];
@@ -1132,7 +1153,11 @@ export function Explore() {
 
   function inquire(p: Product) {
     setDraft({
-      type: 'history',
+      type: p.category === 'archive' ? 'history' : p.category,
+      captureStart: filters.categories[0] === 'tasking' ? filters.dateStart : undefined,
+      captureEnd: filters.categories[0] === 'tasking' ? filters.dateEnd : undefined,
+      captureTimeZone: filters.captureTimeZone ?? 'UTC',
+      aoiGeometry: boundary?.geometry ?? (aoi ? bboxToPolygon(aoi).geometry : undefined),
       productId: p.id,
       productName: lang === 'zh' ? p.productName : p.productNameEn,
       region: regionId
@@ -1185,7 +1210,7 @@ export function Explore() {
           </div>
           {renderAreaSelector()}
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1">
           <FilterPanel
             filters={draftFilters}
             onChange={setDraftFilters}
@@ -1198,7 +1223,7 @@ export function Explore() {
 
       {/* Mobile Filter Sheet */}
       <Sheet open={filterOpen} onOpenChange={setFilterOpen}>
-        <SheetContent side="left" className="w-80 p-0 pt-14">
+        <SheetContent side="left" className="w-80 gap-0 p-0 pt-14">
           <SheetTitle className="sr-only">{t.explore.filters || '筛选'}</SheetTitle>
           <div className="border-b border-border p-4">
             <div className="flex items-center gap-2 rounded-md border border-border bg-input-background px-2">
@@ -1218,7 +1243,7 @@ export function Explore() {
             </div>
             {renderAreaSelector()}
           </div>
-          <div className="overflow-y-auto p-4">
+          <div className="min-h-0 flex-1">
             <FilterPanel
               filters={draftFilters}
               onChange={setDraftFilters}
@@ -1249,10 +1274,14 @@ export function Explore() {
           footprints={footprints}
           highlightId={highlightId}
           drawing={drawing}
+          drawingMode={drawingMode}
+          onDrawCancel={() => setDrawing(false)}
           focus={focus}
-          onDraw={(b) => {
+          onDraw={(b, polygon) => {
             setAoi(b);
-            setBoundary(null);
+            setBoundary(polygon ?? null);
+            setRegionId(null);
+            setVectorName('');
             setDrawing(false);
             setRemoteBbox(b);
           }}
@@ -1275,21 +1304,38 @@ export function Explore() {
             </Button>
 
             <Button
-              variant={drawing ? 'default' : 'outline'}
+              variant={drawing && drawingMode === 'rectangle' ? 'default' : 'outline'}
               size="sm"
               className={
-                drawing
+                drawing && drawingMode === 'rectangle'
                   ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                   : 'bg-card/90 backdrop-blur'
               }
               onClick={() => {
-                setDrawing((d) => !d);
+                setDrawing(!(drawing && drawingMode === 'rectangle'));
+                setDrawingMode('rectangle');
               }}
+              aria-label={t.explore.drawRect}
+              aria-pressed={drawing && drawingMode === 'rectangle'}
             >
               <Square className="size-3.5" />
               <span className="hidden sm:inline">
-                {drawing ? t.explore.drawing : t.explore.drawRect}
+                {drawing && drawingMode === 'rectangle' ? t.explore.drawing : t.explore.drawRect}
               </span>
+            </Button>
+            <Button
+              size="sm"
+              variant={drawing && drawingMode === 'polygon' ? 'default' : 'outline'}
+              className={drawing && drawingMode === 'polygon' ? '' : 'bg-card/90 backdrop-blur'}
+              aria-label={t.explore.drawPolygon}
+              aria-pressed={drawing && drawingMode === 'polygon'}
+              onClick={() => {
+                setDrawing(!(drawing && drawingMode === 'polygon'));
+                setDrawingMode('polygon');
+              }}
+            >
+              <Pentagon className="size-3.5" />
+              <span className="hidden sm:inline">{t.explore.drawPolygon}</span>
             </Button>
             {aoi && (
               <Button
@@ -1297,6 +1343,7 @@ export function Explore() {
                 size="sm"
                 className="bg-card/90 backdrop-blur"
                 onClick={() => {
+                  setDrawing(false);
                   setAoi(null);
                   setBoundary(null);
                   setVectorName('');
@@ -1326,7 +1373,7 @@ export function Explore() {
 
             {drawing && (
               <span className="hidden rounded-md border border-border bg-card/90 px-2 py-1 text-xs text-muted-foreground backdrop-blur sm:inline">
-                {t.explore.drawHint}
+                {drawingMode === 'polygon' ? t.explore.polygonHint : t.explore.drawHint}
               </span>
             )}
           </div>

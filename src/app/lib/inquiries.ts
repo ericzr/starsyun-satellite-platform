@@ -1,4 +1,5 @@
 // localStorage-backed inquiry store (mock "backend inbox").
+import type { CaptureWindow } from './capture-window';
 
 export type InquiryType = 'history' | 'tasking' | 'analysis';
 export type InquiryStatus = 'submitted' | 'pending' | 'quoting' | 'quoted' | 'confirmed';
@@ -14,6 +15,8 @@ export interface Inquiry {
   region: string;
   usage: string;
   expectDate: string;
+  captureWindow?: CaptureWindow;
+  aoiGeometry?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
   expectRes: string;
   note: string;
   productName?: string;
@@ -59,9 +62,7 @@ export function genCode(): string {
   return `INQ-${y}-${seq}`;
 }
 
-export function addInquiry(
-  data: InquiryDraftInput,
-): Inquiry {
+export function addInquiry(data: InquiryDraftInput): Inquiry {
   const list = loadInquiries();
   const inquiry: Inquiry = {
     ...data,
@@ -77,7 +78,9 @@ export function addInquiry(
 }
 
 function cacheInquiry(inquiry: Inquiry) {
-  const list = loadInquiries().filter((item) => item.id !== inquiry.id && item.code !== inquiry.code);
+  const list = loadInquiries().filter(
+    (item) => item.id !== inquiry.id && item.code !== inquiry.code,
+  );
   save([inquiry, ...list]);
 }
 
@@ -119,26 +122,35 @@ export async function submitInquiry(data: InquiryDraftInput): Promise<InquirySub
     if (!mockFallbackEnabled()) throw serviceUnavailable();
   } catch (error) {
     // Network failures may have browser-specific messages; validation/API errors must remain visible.
-    if (!(error instanceof TypeError) || !mockFallbackEnabled()) throw error instanceof TypeError ? serviceUnavailable() : error;
+    if (!(error instanceof TypeError) || !mockFallbackEnabled())
+      throw error instanceof TypeError ? serviceUnavailable() : error;
   }
 
   return { inquiry: addInquiry(data), persisted: false };
 }
 
-export async function loadCustomerInquiries(email?: string, phone?: string): Promise<AdminInquiryLoad> {
+export async function loadCustomerInquiries(
+  email?: string,
+  phone?: string,
+): Promise<AdminInquiryLoad> {
   try {
-    const response = await fetch(`${inquiryApiUrl().replace(/\/$/, '')}/mine`, { credentials: 'include' });
+    const response = await fetch(`${inquiryApiUrl().replace(/\/$/, '')}/mine`, {
+      credentials: 'include',
+    });
     if (response.ok) {
       const payload = (await response.json()) as { inquiries?: Inquiry[] };
       if (!Array.isArray(payload.inquiries)) throw new Error('inquiry API returned invalid data');
       return { inquiries: payload.inquiries, persisted: true };
     }
   } catch (error) {
-    if (!(error instanceof TypeError) || !mockFallbackEnabled()) throw error instanceof TypeError ? serviceUnavailable() : error;
+    if (!(error instanceof TypeError) || !mockFallbackEnabled())
+      throw error instanceof TypeError ? serviceUnavailable() : error;
   }
   if (!mockFallbackEnabled()) throw serviceUnavailable();
   return {
-    inquiries: loadInquiries().filter((inquiry) => inquiry.email === email || inquiry.phone === phone),
+    inquiries: loadInquiries().filter(
+      (inquiry) => inquiry.email === email || inquiry.phone === phone,
+    ),
     persisted: false,
   };
 }
@@ -160,13 +172,17 @@ export async function loadAdminInquiries(): Promise<AdminInquiryLoad> {
       return { inquiries: payload.inquiries, persisted: true };
     }
   } catch (error) {
-    if (!(error instanceof TypeError) || !mockFallbackEnabled()) throw error instanceof TypeError ? serviceUnavailable() : error;
+    if (!(error instanceof TypeError) || !mockFallbackEnabled())
+      throw error instanceof TypeError ? serviceUnavailable() : error;
   }
   if (!mockFallbackEnabled()) throw serviceUnavailable();
   return { inquiries: loadInquiries(), persisted: false };
 }
 
-export async function saveInquiryStatus(id: string, status: InquiryStatus): Promise<InquirySubmission> {
+export async function saveInquiryStatus(
+  id: string,
+  status: InquiryStatus,
+): Promise<InquirySubmission> {
   try {
     const response = await fetch(inquiryItemApiUrl(id), {
       method: 'PATCH',
@@ -181,7 +197,8 @@ export async function saveInquiryStatus(id: string, status: InquiryStatus): Prom
       return { inquiry: payload.inquiry, persisted: true };
     }
   } catch (error) {
-    if (!(error instanceof TypeError) || !mockFallbackEnabled()) throw error instanceof TypeError ? serviceUnavailable() : error;
+    if (!(error instanceof TypeError) || !mockFallbackEnabled())
+      throw error instanceof TypeError ? serviceUnavailable() : error;
   }
   if (!mockFallbackEnabled()) throw serviceUnavailable();
   const inquiry = updateStatus(id, status).find((item) => item.id === id);

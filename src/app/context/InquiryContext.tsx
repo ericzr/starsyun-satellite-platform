@@ -10,6 +10,10 @@ export interface InquiryDraft {
   areaKm2?: number;
   refPrice?: number;
   expectRes?: string;
+  captureStart?: string;
+  captureEnd?: string;
+  captureTimeZone?: string;
+  aoiGeometry?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
 }
 
 interface InquiryCtx {

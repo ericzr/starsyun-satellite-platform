@@ -1,5 +1,6 @@
 import { GatewayError } from './stac';
 import { supabaseApiHeaders } from './supabase';
+import { makeCaptureWindow, type CaptureWindow } from '../../src/app/lib/capture-window';
 
 export type InquiryType = 'history' | 'tasking' | 'analysis';
 export type InquiryStatus = 'submitted' | 'pending' | 'quoting' | 'quoted' | 'confirmed';
@@ -13,6 +14,8 @@ export interface InquiryInput {
   region: string;
   usage: string;
   expectDate: string;
+  captureWindow?: CaptureWindow;
+  aoiGeometry?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
   expectRes: string;
   note: string;
   productName?: string;
@@ -48,8 +51,42 @@ function text(value: unknown, field: string, required = false) {
 function numberValue(value: unknown, field: string) {
   if (value == null || value === '') return 0;
   const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) throw new GatewayError(400, `${field} must be a non-negative number`);
+  if (!Number.isFinite(parsed) || parsed < 0)
+    throw new GatewayError(400, `${field} must be a non-negative number`);
   return parsed;
+}
+
+function aoiGeometry(value: unknown): GeoJSON.Polygon | GeoJSON.MultiPolygon | undefined {
+  if (value == null) return undefined;
+  if (!value || typeof value !== 'object') throw new GatewayError(400, 'aoiGeometry is invalid');
+  const geometry = value as { type?: unknown; coordinates?: unknown };
+  if (
+    (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon') ||
+    !Array.isArray(geometry.coordinates)
+  ) {
+    throw new GatewayError(400, 'aoiGeometry is invalid');
+  }
+  let points = 0;
+  const visit = (node: unknown): void => {
+    if (!Array.isArray(node)) throw new GatewayError(400, 'aoiGeometry is invalid');
+    if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+      const [lng, lat] = node;
+      if (
+        !Number.isFinite(lng) ||
+        !Number.isFinite(lat) ||
+        Math.abs(lng) > 540 ||
+        Math.abs(lat) > 90
+      )
+        throw new GatewayError(400, 'aoiGeometry is invalid');
+      points += 1;
+      if (points > 20000) throw new GatewayError(400, 'aoiGeometry has too many vertices');
+      return;
+    }
+    node.forEach(visit);
+  };
+  visit(geometry.coordinates);
+  if (!points) throw new GatewayError(400, 'aoiGeometry is invalid');
+  return geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
 }
 
 export function parseInquiryInput(body: unknown): InquiryInput {
@@ -57,6 +94,16 @@ export function parseInquiryInput(body: unknown): InquiryInput {
   const type = input.type;
   if (type !== 'history' && type !== 'tasking' && type !== 'analysis') {
     throw new GatewayError(400, 'type is invalid');
+  }
+  let captureWindow: CaptureWindow | undefined;
+  const inputGeometry = aoiGeometry(input.aoiGeometry);
+  if (type === 'tasking' && input.captureWindow != null) {
+    try {
+      const window = input.captureWindow as Record<string, string>;
+      captureWindow = makeCaptureWindow(window.startDate, window.endDate, window.timeZone);
+    } catch {
+      throw new GatewayError(400, 'Invalid capture dates or time zone');
+    }
   }
   return {
     type,
@@ -67,6 +114,8 @@ export function parseInquiryInput(body: unknown): InquiryInput {
     region: text(input.region, 'region'),
     usage: text(input.usage, 'usage'),
     expectDate: text(input.expectDate, 'expectDate'),
+    captureWindow,
+    aoiGeometry: inputGeometry,
     expectRes: text(input.expectRes, 'expectRes'),
     note: text(input.note, 'note'),
     productName: text(input.productName, 'productName') || undefined,
@@ -100,6 +149,8 @@ function recordFromRow(row: InquiryRow): InquiryRecord {
     region: String(row.region ?? ''),
     usage: String(row.usage ?? ''),
     expectDate: String(row.expect_date ?? ''),
+    captureWindow: row.capture_window == null ? undefined : (row.capture_window as CaptureWindow),
+    aoiGeometry: row.aoi_geometry == null ? undefined : aoiGeometry(row.aoi_geometry),
     expectRes: String(row.expect_res ?? ''),
     note: String(row.note ?? ''),
     productName: row.product_name == null ? undefined : String(row.product_name),
@@ -131,6 +182,8 @@ export async function insertInquiry(record: InquiryRecord) {
     region: record.region,
     usage: record.usage,
     expect_date: record.expectDate,
+    ...(record.captureWindow ? { capture_window: record.captureWindow } : {}),
+    ...(record.aoiGeometry ? { aoi_geometry: record.aoiGeometry } : {}),
     expect_res: record.expectRes,
     note: record.note,
     product_name: record.productName ?? null,
@@ -162,9 +215,12 @@ export async function insertInquiry(record: InquiryRecord) {
 
 export async function listInquiries() {
   const { url, key } = persistenceConfig();
-  const response = await fetch(`${url}/rest/v1/inquiries?select=*&order=created_at.desc&limit=500`, {
-    headers: { ...supabaseApiHeaders(key), Accept: 'application/json' },
-  });
+  const response = await fetch(
+    `${url}/rest/v1/inquiries?select=*&order=created_at.desc&limit=500`,
+    {
+      headers: { ...supabaseApiHeaders(key), Accept: 'application/json' },
+    },
+  );
   if (!response.ok) throw new GatewayError(502, `inquiry persistence failed (${response.status})`);
   const rows = (await response.json()) as InquiryRow[];
   return rows.map(recordFromRow);
@@ -173,9 +229,12 @@ export async function listInquiries() {
 export async function listUserInquiries(userId: string) {
   if (!/^[0-9a-f-]{20,80}$/i.test(userId)) throw new GatewayError(400, 'invalid customer id');
   const { url, key } = persistenceConfig();
-  const response = await fetch(`${url}/rest/v1/inquiries?select=*&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=100`, {
-    headers: { ...supabaseApiHeaders(key), Accept: 'application/json' },
-  });
+  const response = await fetch(
+    `${url}/rest/v1/inquiries?select=*&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=100`,
+    {
+      headers: { ...supabaseApiHeaders(key), Accept: 'application/json' },
+    },
+  );
   if (!response.ok) throw new GatewayError(502, `inquiry persistence failed (${response.status})`);
   const rows = (await response.json()) as InquiryRow[];
   return rows.map(recordFromRow);
@@ -184,15 +243,18 @@ export async function listUserInquiries(userId: string) {
 export async function updateInquiryStatus(id: string, status: InquiryStatus) {
   if (!/^[0-9a-f-]{20,80}$/i.test(id)) throw new GatewayError(400, 'invalid inquiry id');
   const { url, key } = persistenceConfig();
-  const response = await fetch(`${url}/rest/v1/inquiries?id=eq.${encodeURIComponent(id)}&select=*`, {
-    method: 'PATCH',
-    headers: {
-      ...supabaseApiHeaders(key),
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation',
+  const response = await fetch(
+    `${url}/rest/v1/inquiries?id=eq.${encodeURIComponent(id)}&select=*`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...supabaseApiHeaders(key),
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify({ status }),
     },
-    body: JSON.stringify({ status }),
-  });
+  );
   if (!response.ok) throw new GatewayError(502, `inquiry persistence failed (${response.status})`);
   const rows = (await response.json()) as InquiryRow[];
   if (!rows[0]) throw new GatewayError(404, 'inquiry not found');

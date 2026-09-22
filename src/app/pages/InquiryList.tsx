@@ -17,13 +17,25 @@ export function InquiryList() {
 
   useEffect(() => {
     let active = true;
-    loadCustomerInquiries(user?.email, user?.phone).then(({ inquiries: next }) => {
-      if (active) setInquiries(next);
-    }).catch(() => undefined);
-    return () => { active = false; };
+    loadCustomerInquiries(user?.email, user?.phone)
+      .then(({ inquiries: next }) => {
+        if (active) setInquiries(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
   }, [user?.email, user?.phone]);
 
-  const statusConfig: Record<InquiryStatus, { label: string; labelEn: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: any }> = {
+  const statusConfig: Record<
+    InquiryStatus,
+    {
+      label: string;
+      labelEn: string;
+      variant: 'default' | 'secondary' | 'destructive' | 'outline';
+      icon: any;
+    }
+  > = {
     submitted: { label: '已提交', labelEn: 'Submitted', variant: 'secondary', icon: Clock },
     pending: { label: '处理中', labelEn: 'Pending', variant: 'secondary', icon: Clock },
     quoting: { label: '报价中', labelEn: 'Quoting', variant: 'default', icon: FileText },
@@ -104,21 +116,52 @@ export function InquiryList() {
                         )}
                         {inquiry.expectRes && (
                           <div>
-                            <div className="text-xs text-muted-foreground">{t.inquiry.expectRes}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {t.inquiry.expectRes}
+                            </div>
                             <div className="mt-1 text-sm font-medium">{inquiry.expectRes}</div>
+                          </div>
+                        )}
+                        {inquiry.captureWindow && (
+                          <div className="col-span-2 sm:col-span-1">
+                            <div className="text-xs text-muted-foreground">
+                              {lang === 'zh' ? '拍摄窗口' : 'Capture window'}
+                            </div>
+                            <div className="mt-1 text-sm font-medium">
+                              {inquiry.captureWindow.startDate} — {inquiry.captureWindow.endDate}
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              {inquiry.captureWindow.timeZone}
+                            </div>
+                          </div>
+                        )}
+                        {inquiry.aoiGeometry && (
+                          <div>
+                            <div className="text-xs text-muted-foreground">AOI</div>
+                            <div className="mt-1 text-sm font-medium">
+                              {lang === 'zh'
+                                ? '已附加真实区域边界'
+                                : 'Exact area boundary attached'}
+                            </div>
                           </div>
                         )}
                         {inquiry.refPrice > 0 && (
                           <div>
-                            <div className="text-xs text-muted-foreground">{lang === 'zh' ? '参考价格' : 'Ref. Price'}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {lang === 'zh' ? '参考价格' : 'Ref. Price'}
+                            </div>
                             <div className="mt-1 text-sm font-medium text-primary">
                               {money(inquiry.refPrice)} {lang === 'zh' ? '元' : 'CNY'}
                             </div>
                           </div>
                         )}
                         <div>
-                          <div className="text-xs text-muted-foreground">{lang === 'zh' ? '提交时间' : 'Submitted'}</div>
-                          <div className="mt-1 text-sm font-medium">{formatDate(inquiry.createdAt)}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {lang === 'zh' ? '提交时间' : 'Submitted'}
+                          </div>
+                          <div className="mt-1 text-sm font-medium">
+                            {formatDate(inquiry.createdAt)}
+                          </div>
                         </div>
                       </div>
 

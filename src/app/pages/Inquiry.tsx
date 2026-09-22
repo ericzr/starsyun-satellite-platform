@@ -11,6 +11,8 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
+import { CaptureTimezone } from '../components/CaptureTimezone';
+import { makeCaptureWindow } from '../lib/capture-window';
 
 export function Inquiry() {
   const { t, lang } = useI18n();
@@ -29,32 +31,57 @@ export function Inquiry() {
     note: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captureStart, setCaptureStart] = useState(draft.captureStart ?? '');
+  const [captureEnd, setCaptureEnd] = useState(draft.captureEnd ?? '');
+  const [captureTimeZone, setCaptureTimeZone] = useState(draft.captureTimeZone ?? 'UTC');
+  const [timezoneConfirmed, setTimezoneConfirmed] = useState(false);
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set =
+    (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const money = (v: number) => (lang === 'zh' ? fmtCny(v) : fmtCnyEn(v));
 
   const submit = async () => {
     if (!form.name || !form.phone || !form.company) {
-      toast.error(lang === 'zh' ? '请填写姓名、手机号和公司名称' : 'Please fill name, phone and company');
+      toast.error(
+        lang === 'zh' ? '请填写姓名、手机号和公司名称' : 'Please fill name, phone and company',
+      );
       return;
     }
     setIsSubmitting(true);
     try {
+      if (draft.type === 'tasking' && !timezoneConfirmed)
+        throw new Error(t.explore.confirmTimezone);
+      const captureWindow =
+        draft.type === 'tasking'
+          ? makeCaptureWindow(captureStart, captureEnd, captureTimeZone)
+          : undefined;
       const { inquiry, persisted } = await submitInquiry({
         type: draft.type,
         ...form,
+        captureWindow,
+        aoiGeometry: draft.aoiGeometry,
         productName: draft.productName,
         refPrice: draft.refPrice ?? 0,
         areaKm2: draft.areaKm2 ?? 0,
       });
       if (!persisted) {
-        toast.message(lang === 'zh' ? '询价已保存到当前设备，待服务端启用后将自动同步' : 'Inquiry saved on this device until the service is enabled');
+        toast.message(
+          lang === 'zh'
+            ? '询价已保存到当前设备，待服务端启用后将自动同步'
+            : 'Inquiry saved on this device until the service is enabled',
+        );
       }
       navigate(`/inquiry/success?code=${inquiry.code}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : (lang === 'zh' ? '提交失败，请稍后重试' : 'Submission failed. Please try again.'));
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : lang === 'zh'
+            ? '提交失败，请稍后重试'
+            : 'Submission failed. Please try again.',
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -80,7 +107,12 @@ export function Inquiry() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
-        <Button variant="ghost" size="sm" className="mb-3 gap-1 text-muted-foreground sm:mb-4" onClick={() => navigate(-1)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mb-3 gap-1 text-muted-foreground sm:mb-4"
+          onClick={() => navigate(-1)}
+        >
           <ArrowLeft className="size-4" />
           {t.common.back}
         </Button>
@@ -114,7 +146,9 @@ export function Inquiry() {
 
         {/* Type selector */}
         <div className="mt-4 sm:mt-6">
-          <Label className="text-xs text-muted-foreground">{lang === 'zh' ? '询价类型' : 'Inquiry type'}</Label>
+          <Label className="text-xs text-muted-foreground">
+            {lang === 'zh' ? '询价类型' : 'Inquiry type'}
+          </Label>
           <Tabs
             value={draft.type}
             onValueChange={(v) => setDraft({ ...draft, type: v as InquiryType })}
@@ -131,6 +165,52 @@ export function Inquiry() {
         </div>
 
         {/* Form */}
+        {draft.type === 'tasking' && (
+          <section className="mt-4 space-y-3 rounded-lg border border-border bg-panel p-4">
+            <h2 className="text-sm">{t.explore.taskingDate}</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1 text-xs">
+                {lang === 'zh' ? '开始日期' : 'Start date'}
+                <Input
+                  type="date"
+                  value={captureStart}
+                  onChange={(e) => {
+                    setCaptureStart(e.target.value);
+                    setTimezoneConfirmed(false);
+                  }}
+                />
+              </label>
+              <label className="space-y-1 text-xs">
+                {lang === 'zh' ? '结束日期' : 'End date'}
+                <Input
+                  type="date"
+                  value={captureEnd}
+                  min={captureStart}
+                  onChange={(e) => {
+                    setCaptureEnd(e.target.value);
+                    setTimezoneConfirmed(false);
+                  }}
+                />
+              </label>
+            </div>
+            <CaptureTimezone
+              value={captureTimeZone}
+              onChange={(zone) => {
+                setCaptureTimeZone(zone);
+                setTimezoneConfirmed(false);
+              }}
+            />
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={timezoneConfirmed}
+                onChange={(e) => setTimezoneConfirmed(e.target.checked)}
+              />
+              {t.explore.confirmTimezone}
+            </label>
+          </section>
+        )}
+
         <div className="mt-4 grid grid-cols-1 gap-3 sm:mt-6 sm:grid-cols-2 sm:gap-4">
           {fields.map((f) => (
             <div key={f.key} className="space-y-1.5">
@@ -138,7 +218,12 @@ export function Inquiry() {
                 {f.label}
                 {f.required && <span className="ml-1 text-destructive">*</span>}
               </Label>
-              <Input type={f.type ?? 'text'} value={form[f.key]} onChange={set(f.key)} className="text-sm" />
+              <Input
+                type={f.type ?? 'text'}
+                value={form[f.key]}
+                onChange={set(f.key)}
+                className="text-sm"
+              />
             </div>
           ))}
           <div className="space-y-1.5 sm:col-span-2">
@@ -149,7 +234,11 @@ export function Inquiry() {
 
         <div className="mt-6 flex justify-end">
           <Button size="lg" onClick={submit} disabled={isSubmitting} className="w-full sm:w-auto">
-            {isSubmitting ? (lang === 'zh' ? '提交中...' : 'Submitting...') : t.inquiry.submitInquiry}
+            {isSubmitting
+              ? lang === 'zh'
+                ? '提交中...'
+                : 'Submitting...'
+              : t.inquiry.submitInquiry}
           </Button>
         </div>
       </div>
@@ -157,11 +246,23 @@ export function Inquiry() {
   );
 }
 
-function Sum({ label, value, accent, span }: { label: string; value: string; accent?: boolean; span?: boolean }) {
+function Sum({
+  label,
+  value,
+  accent,
+  span,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  span?: boolean;
+}) {
   return (
     <div className={span ? 'col-span-2' : ''}>
       <div className="tech-label text-[9px] text-muted-foreground sm:text-[10px]">{label}</div>
-      <div className={`mt-0.5 text-xs ${accent ? 'font-mono text-primary' : ''} sm:text-sm`}>{value}</div>
+      <div className={`mt-0.5 text-xs ${accent ? 'font-mono text-primary' : ''} sm:text-sm`}>
+        {value}
+      </div>
     </div>
   );
 }
