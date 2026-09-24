@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { GatewayError, parseSearchRequest, searchEarthSearch } from './stac';
 import { persistenceConfig } from './inquiries';
 import { supabaseApiHeaders } from './supabase';
@@ -35,10 +36,14 @@ function normalizedProduct(feature: Record<string, unknown>) {
   const properties = feature.properties && typeof feature.properties === 'object' ? feature.properties as Record<string, unknown> : {};
   const id = typeof feature.id === 'string' ? feature.id : '';
   if (!id) throw new GatewayError(502, 'provider returned an item without an id');
+  const digest = createHash('sha256').update(`earth-search:${id}`).digest();
+  digest[6] = (digest[6] & 0x0f) | 0x50;
+  digest[8] = (digest[8] & 0x3f) | 0x80;
+  const stableId = `${digest.toString('hex', 0, 4)}-${digest.toString('hex', 4, 6)}-${digest.toString('hex', 6, 8)}-${digest.toString('hex', 8, 10)}-${digest.toString('hex', 10, 16)}`;
   const bbox = Array.isArray(feature.bbox) && feature.bbox.length === 4 ? feature.bbox.map(Number) : null;
   const captureTime = typeof properties.datetime === 'string' ? properties.datetime : null;
   return {
-    id: crypto.randomUUID(), provider_id: 'earth-search', external_id: id, category: 'archive',
+    id: stableId, provider_id: 'earth-search', external_id: id, category: 'archive',
     collection: 'sentinel-2-l2a', capture_time: captureTime, geometry: feature.geometry ?? null, bbox,
     metadata: { ...properties, stac_id: id }, availability: 'unknown', price_mode: 'free', currency: null, price: null,
     license: String(properties.license ?? 'public-data'), terms_version: 'source-metadata',

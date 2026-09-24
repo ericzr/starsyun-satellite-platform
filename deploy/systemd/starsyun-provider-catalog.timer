@@ -1,0 +1,11 @@
+[Unit]
+Description=Run StarSyun public catalog synchronization daily
+
+[Timer]
+OnBootSec=8min
+OnCalendar=*-*-* 03:20:00 UTC
+Persistent=true
+Unit=starsyun-provider-catalog.service
+
+[Install]
+WantedBy=timers.target

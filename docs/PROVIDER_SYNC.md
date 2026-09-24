@@ -6,6 +6,7 @@
 - 商业供应商目前没有启用 Adapter。没有企业合同、价格、区域授权、配额和交付验收时，`data_sources.status` 必须保持 `planned` 或 `paused`。
 - `POST /api/admin/provider-sync` 由管理员会话或服务器专用 `x-provider-sync-token` 调用；每次运行写入 `provider_sync_runs`，记录状态、数量、摘要和错误。
 - `GET /api/admin/provider-sync` 返回 Adapter 能力和最近 100 次运行，只有管理员会话可读。
+- 健康检查和公开目录同步使用独立的 systemd timer：健康检查每 5 分钟，公开目录每日一次。
 
 ## 服务器配置
 
@@ -29,6 +30,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now starsyun-provider-sync.timer
 systemctl list-timers starsyun-provider-sync.timer
 sudo journalctl -u starsyun-provider-sync.service -n 50 --no-pager
+```
+
+公开目录每日同步还需要安装 `starsyun-provider-catalog.service` 和 `.timer`：
+
+```bash
+sudo systemctl enable --now starsyun-provider-catalog.timer
+systemctl list-timers 'starsyun-provider-*'
+sudo journalctl -u starsyun-provider-catalog.service -n 50 --no-pager
 ```
 
 首次启用前，先执行 Supabase 的 `013_provider_sync_runs.sql`，再用健康检查确认上游可达。

@@ -1,0 +1,13 @@
+[Unit]
+Description=StarSyun public catalog synchronization
+After=network-online.target starsyun.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=starsyun
+WorkingDirectory=/srv/starsyun/current
+EnvironmentFile=/etc/starsyun/starsyun.env
+Environment=PROVIDER_SYNC_MODE=catalog
+ExecStart=/usr/bin/node /srv/starsyun/current/scripts/provider-sync.mjs
+
