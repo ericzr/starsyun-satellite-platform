@@ -22,7 +22,16 @@ function input(body: unknown) {
 }
 async function rest(path: string, init: RequestInit = {}) {
   const { url, key } = persistenceConfig();
-  const response = await fetch(`${url}/rest/v1/${path}`, { ...init, headers: { ...supabaseApiHeaders(key), Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers ?? {}) } });
+  let response: Response;
+  try {
+    response = await fetch(`${url}/rest/v1/${path}`, {
+      ...init,
+      headers: { ...supabaseApiHeaders(key), Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers ?? {}) },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw Object.assign(new Error('sync persistence unavailable'), { status: 502 });
+  }
   if (!response.ok) throw Object.assign(new Error(`sync persistence failed (${response.status})`), { status: 502 });
   return response;
 }

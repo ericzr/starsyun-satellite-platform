@@ -23,6 +23,8 @@ for (const migration of [
   '009_order_quote_items.sql',
   '010_create_public_downloads.sql',
   '011_normalize_paypal_provider.sql',
+  '012_inquiry_capture_window.sql',
+  '013_provider_sync_runs.sql',
 ]) {
   requireFile(`supabase/migrations/${migration}`);
 }

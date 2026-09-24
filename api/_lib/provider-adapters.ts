@@ -16,11 +16,16 @@ type Adapter = {
 
 async function supabaseRequest(path: string, init: RequestInit = {}) {
   const { url, key } = persistenceConfig();
-  const response = await fetch(`${url}/rest/v1/${path}`, {
-    ...init,
-    headers: { ...supabaseApiHeaders(key), Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers ?? {}) },
-    signal: AbortSignal.timeout(15_000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${url}/rest/v1/${path}`, {
+      ...init,
+      headers: { ...supabaseApiHeaders(key), Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers ?? {}) },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new GatewayError(502, 'catalog persistence unavailable');
+  }
   if (!response.ok) throw new GatewayError(502, `catalog persistence failed (${response.status})`);
   return response;
 }

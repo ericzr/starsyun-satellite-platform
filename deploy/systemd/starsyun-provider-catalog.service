@@ -6,8 +6,13 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=starsyun
+Group=starsyun
 WorkingDirectory=/srv/starsyun/current
 EnvironmentFile=/etc/starsyun/starsyun.env
 Environment=PROVIDER_SYNC_MODE=catalog
 ExecStart=/usr/bin/node /srv/starsyun/current/scripts/provider-sync.mjs
-
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+TimeoutStartSec=90
