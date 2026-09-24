@@ -1,0 +1,12 @@
+[Unit]
+Description=StarSyun provider synchronization
+After=network-online.target starsyun.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=starsyun
+WorkingDirectory=/srv/starsyun/current
+EnvironmentFile=/etc/starsyun/starsyun.env
+ExecStart=/usr/bin/node /srv/starsyun/current/scripts/provider-sync.mjs
+

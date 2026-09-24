@@ -1,0 +1,11 @@
+[Unit]
+Description=Run StarSyun provider health synchronization every 5 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=starsyun-provider-sync.service
+
+[Install]
+WantedBy=timers.target

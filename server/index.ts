@@ -39,6 +39,7 @@ import adminProviderQuote from '../api/admin/provider-quotes/[id]';
 import adminProviderOrders from '../api/admin/provider-orders';
 import adminProviderOrder from '../api/admin/provider-orders/[id]';
 import adminCatalogProducts from '../api/admin/catalog-products';
+import adminProviderSync from '../api/admin/provider-sync';
 import wallet from '../api/wallet/index';
 import walletHolds from '../api/wallet/holds';
 import adminWalletCredit from '../api/admin/wallet-credit';
@@ -66,6 +67,7 @@ const routes: ApiRoute[] = [
   { pattern: /^\/api\/admin\/wallet-credit\/?$/, handler: adminWalletCredit },
   { pattern: /^\/api\/admin\/wallet-operation\/?$/, handler: adminWalletOperation },
   { pattern: /^\/api\/admin\/catalog-products\/?$/, handler: adminCatalogProducts },
+  { pattern: /^\/api\/admin\/provider-sync\/?$/, handler: adminProviderSync },
   { pattern: /^\/api\/admin\/areas\/([^/]+)\/?$/, handler: adminArea, parameter: 'id' },
   { pattern: /^\/api\/admin\/areas\/?$/, handler: adminAreas },
   { pattern: /^\/api\/catalog\/sources\/?$/, handler: catalogSources },
