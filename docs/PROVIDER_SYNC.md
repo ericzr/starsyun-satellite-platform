@@ -3,6 +3,7 @@
 当前实现提供一条服务端同步边界：
 
 - `earth-search`、`copernicus` 和 `planetary-computer` Adapter 已实现 `health` 和 `catalog`。它们读取各自的真实 STAC 结果，写入 `provider_products`，产品默认保持 `availability=unknown`，不会自动变成可销售库存。
+- 这些 Adapter 只负责公开目录同步，不提供交易工作流能力。`search`、`getProduct`、`quote`、`createOrder`、订单状态、取消和交付等商业能力目前没有注册可执行 Adapter；`api/_lib/provider-workflow.ts` 的 `providerAdapters()` 因此返回空列表。后台报价/订单接口只是人工运营记录，不代表已接通供应商 API。
 - 商业供应商目前没有启用 Adapter。没有企业合同、价格、区域授权、配额和交付验收时，`data_sources.status` 必须保持 `planned` 或 `paused`。
 - `POST /api/admin/provider-sync` 由管理员会话或服务器专用 `x-provider-sync-token` 调用；每次运行写入 `provider_sync_runs`，记录状态、数量、摘要和错误。
 - `GET /api/admin/provider-sync` 返回 Adapter 能力和最近 100 次运行，只有管理员会话可读。

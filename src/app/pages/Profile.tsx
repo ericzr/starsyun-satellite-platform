@@ -13,7 +13,7 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
-import { User, ShoppingCart, Package, FileText, Settings, LogOut, Trash2, Plus, Minus, Clock, CheckCircle, ExternalLink } from 'lucide-react';
+import { User, ShoppingCart, Package, FileText, Settings, LogOut, Trash2, Plus, Minus, Clock, CheckCircle, ExternalLink, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 type TabValue = 'cart' | 'orders' | 'inquiries';
@@ -25,9 +25,9 @@ export function Profile() {
   const { items, orders, removeFromCart, updateQuantity } = useCart();
   const demoDataEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
   const localOrders = demoDataEnabled ? orders : [];
-  const checkoutEnabled = import.meta.env.DEV
-    || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true'
-    || import.meta.env.VITE_ENABLE_CHECKOUT === 'true';
+  // Profile cart actions share the local-only checkout flow. Production
+  // purchases must use the server quote/payment workflow instead.
+  const checkoutEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
   const [activeTab, setActiveTab] = useState<TabValue>('cart');
 
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
@@ -102,7 +102,7 @@ export function Profile() {
     }
   };
 
-  const statusConfig: Record<InquiryStatus, { label: string; labelEn: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: any }> = {
+  const statusConfig: Record<InquiryStatus, { label: string; labelEn: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: LucideIcon }> = {
     submitted: { label: '已提交', labelEn: 'Submitted', variant: 'secondary', icon: Clock },
     pending: { label: '处理中', labelEn: 'Pending', variant: 'secondary', icon: Clock },
     quoting: { label: '报价中', labelEn: 'Quoting', variant: 'default', icon: FileText },

@@ -408,7 +408,7 @@ export function Explore() {
     const next = filtersFromSearchParams(params, categoryParam);
     setDraftFilters(next);
     setAppliedFilters(cloneFilters(next));
-  }, [categoryParam, filterParamKey]);
+  }, [categoryParam, filterParamKey, params]);
 
   // Handle ?q= from home
   useEffect(() => {

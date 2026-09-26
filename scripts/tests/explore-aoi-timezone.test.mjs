@@ -127,6 +127,13 @@ test('bad dates/zones, reversed dates and skipped local dates rejected', () => {
 test('server recomputes UTC rather than trusting client timestamps; legacy input still works', async () => {
   const base = { type: 'tasking', name: 'Test', phone: 'test', company: 'Test' };
   assert.equal(parseInquiryInput(base).captureWindow, undefined);
+  const pastDate = new Date(Date.parse(`${todayInTimeZone('UTC')}T00:00:00Z`) - 86400000)
+    .toISOString()
+    .slice(0, 10);
+  assert.throws(() => parseInquiryInput({
+    ...base,
+    captureWindow: { startDate: pastDate, endDate: pastDate, timeZone: 'UTC' },
+  }));
   const geometry = {
     type: 'Polygon',
     coordinates: [
@@ -142,13 +149,13 @@ test('server recomputes UTC rather than trusting client timestamps; legacy input
     ...base,
     aoiGeometry: geometry,
     captureWindow: {
-      startDate: '2026-09-24',
-      endDate: '2026-09-24',
+      startDate: '2099-09-24',
+      endDate: '2099-09-24',
       timeZone: 'Asia/Shanghai',
       startUtc: 'tampered',
     },
   });
-  assert.equal(input.captureWindow.startUtc, '2026-09-23T16:00:00.000Z');
+  assert.equal(input.captureWindow.startUtc, '2099-09-23T16:00:00.000Z');
   assert.deepEqual(input.aoiGeometry, geometry);
   assert.throws(() => parseInquiryInput({ ...base, captureWindow: { timeZone: 'Invalid' } }));
   const oldFetch = globalThis.fetch;

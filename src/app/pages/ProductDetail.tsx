@@ -140,9 +140,10 @@ export function ProductDetail() {
   // download flow; paid products must remain in the inquiry/checkout flow.
   const isOpenData = product.priceType === 'free' && Boolean(product.sourceUrl);
   const hasFixedPrice = product.priceType === 'fixed' && product.unitPrice > 0;
-  const checkoutEnabled = import.meta.env.DEV
-    || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true'
-    || import.meta.env.VITE_ENABLE_CHECKOUT === 'true';
+  // Product detail uses the local cart only for development/mock inventory.
+  // Production paid orders are created from accepted server quotes, so an
+  // environment flag must not make this page advertise a fake checkout.
+  const checkoutEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
 
   const categoryInfo = {
     archive: { icon: Archive, label: lang === 'zh' ? '历史存档' : 'Archive' },

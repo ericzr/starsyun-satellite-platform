@@ -27,7 +27,7 @@ export function Login() {
   const [registerLoading, setRegisterLoading] = useState(false);
 
   // 获取登录前的页面，用于登录成功后跳转
-  const from = (location.state as any)?.from || '/';
+  const from = (location.state as { from?: string } | null)?.from || '/';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +37,7 @@ export function Login() {
       await login(loginEmail, loginPassword);
       toast.success(lang === 'zh' ? '登录成功' : 'Login successful');
       navigate(from, { replace: true });
-    } catch (error) {
+    } catch {
       toast.error(lang === 'zh' ? '登录失败，请检查邮箱和密码' : 'Login failed, please check email and password');
     } finally {
       setLoginLoading(false);
@@ -58,7 +58,7 @@ export function Login() {
       });
       toast.success(lang === 'zh' ? '注册成功' : 'Registration successful');
       navigate(from, { replace: true });
-    } catch (error) {
+    } catch {
       toast.error(lang === 'zh' ? '注册失败' : 'Registration failed');
     } finally {
       setRegisterLoading(false);

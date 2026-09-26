@@ -42,9 +42,10 @@ export function ResultCard({
           : `${product.unitPrice} ${lang === 'zh' ? t.common.perSqkm : 'CNY/km²'}`;
 
   const isInstantPurchase = product.purchaseType === 'instant';
-  const checkoutEnabled = import.meta.env.DEV
-    || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true'
-    || import.meta.env.VITE_ENABLE_CHECKOUT === 'true';
+  // The cart is a local demo flow until a server-side order/payment endpoint
+  // is wired to this card. Do not expose a production purchase action merely
+  // because an old VITE_ENABLE_CHECKOUT flag is present in the environment.
+  const checkoutEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
   const isOpenData = product.priceType === 'free' && Boolean(product.sourceUrl);
 
   // 产品类型图标和标签

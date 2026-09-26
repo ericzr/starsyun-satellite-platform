@@ -5,9 +5,17 @@ import { supabaseApiHeaders } from './supabase';
 export type ProviderQuoteStatus = 'requested' | 'quoted' | 'expired' | 'accepted' | 'rejected' | 'cancelled' | 'failed';
 export type ProviderOrderStatus = 'pending' | 'quoted' | 'submitted' | 'processing' | 'delivered' | 'cancelled' | 'failed';
 
+/**
+ * Capabilities of a provider adapter that can execute commercial workflow
+ * operations.  This is deliberately separate from the catalog sync modes in
+ * provider-adapters.ts: a STAC catalog sync is not a searchable or purchasable
+ * provider integration.
+ */
+export type ProviderWorkflowCapability = 'search' | 'getProduct' | 'quote' | 'createOrder' | 'getOrderStatus' | 'cancel' | 'getDelivery';
+
 export interface ProviderAdapter {
   readonly id: string;
-  readonly capabilities: readonly ('search' | 'getProduct' | 'quote' | 'createOrder' | 'getOrderStatus' | 'cancel' | 'getDelivery')[];
+  readonly capabilities: readonly ProviderWorkflowCapability[];
 }
 
 export interface ProviderQuote {
@@ -45,10 +53,11 @@ export interface ProviderOrder {
 
 type Row = Record<string, unknown>;
 
-const adapters: readonly ProviderAdapter[] = [
-  { id: 'earth-search', capabilities: ['search', 'getProduct'] },
-  { id: 'copernicus', capabilities: ['search', 'getProduct'] },
-];
+// No commercial workflow adapter is implemented yet.  Keep this registry
+// empty until an adapter provides executable methods for every advertised
+// capability.  The admin quote/order endpoints below persist manual operator
+// records and must not be treated as provider API integrations.
+const adapters: readonly ProviderAdapter[] = [];
 
 const quoteTransitions: Record<ProviderQuoteStatus, ProviderQuoteStatus[]> = {
   requested: ['quoted', 'failed', 'cancelled'], quoted: ['accepted', 'rejected', 'expired', 'failed'], accepted: [], rejected: [], expired: [], cancelled: [], failed: ['requested'],

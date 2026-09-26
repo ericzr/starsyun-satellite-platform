@@ -26,5 +26,9 @@ export const PRICE_TYPE_LABEL: Record<PriceType, { zh: string; en: string }> = {
 };
 
 export function pick(pair: { zh: string; en: string }, lang: Lang) {
-  return pair[lang];
+  // Some legacy domain labels only have zh/en entries. Never render an empty
+  // chip or product badge when the site is switched to another supported
+  // locale; the full locale dictionaries can provide richer terminology
+  // without making the data catalogue appear to be missing a field.
+  return pair[lang as 'zh' | 'en'] || pair.en || pair.zh;
 }

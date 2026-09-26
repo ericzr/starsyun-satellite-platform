@@ -12,7 +12,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
 import { CaptureTimezone } from '../components/CaptureTimezone';
-import { makeCaptureWindow } from '../lib/capture-window';
+import { makeCaptureWindow, todayInTimeZone } from '../lib/capture-window';
 
 export function Inquiry() {
   const { t, lang } = useI18n();
@@ -35,6 +35,7 @@ export function Inquiry() {
   const [captureEnd, setCaptureEnd] = useState(draft.captureEnd ?? '');
   const [captureTimeZone, setCaptureTimeZone] = useState(draft.captureTimeZone ?? 'UTC');
   const [timezoneConfirmed, setTimezoneConfirmed] = useState(false);
+  const captureMinDate = todayInTimeZone(captureTimeZone);
 
   const set =
     (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -53,6 +54,8 @@ export function Inquiry() {
     try {
       if (draft.type === 'tasking' && !timezoneConfirmed)
         throw new Error(t.explore.confirmTimezone);
+      if (draft.type === 'tasking' && (!captureStart || !captureEnd || captureStart < captureMinDate || captureEnd < captureMinDate))
+        throw new Error(lang === 'zh' ? '任务拍摄日期不能早于当前日期' : 'Tasking dates cannot be earlier than today');
       const captureWindow =
         draft.type === 'tasking'
           ? makeCaptureWindow(captureStart, captureEnd, captureTimeZone)
@@ -173,6 +176,7 @@ export function Inquiry() {
                 {lang === 'zh' ? '开始日期' : 'Start date'}
                 <Input
                   type="date"
+                  min={captureMinDate}
                   value={captureStart}
                   onChange={(e) => {
                     setCaptureStart(e.target.value);
@@ -184,8 +188,8 @@ export function Inquiry() {
                 {lang === 'zh' ? '结束日期' : 'End date'}
                 <Input
                   type="date"
+                  min={captureStart && captureStart > captureMinDate ? captureStart : captureMinDate}
                   value={captureEnd}
-                  min={captureStart}
                   onChange={(e) => {
                     setCaptureEnd(e.target.value);
                     setTimezoneConfirmed(false);

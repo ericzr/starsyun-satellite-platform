@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, GitCompare, Headset, MessageSquareQuote, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, MessageSquareQuote, ShoppingCart } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getProduct } from '../data/products';
 import { getSatellite } from '../data/satellites';

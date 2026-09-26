@@ -1,6 +1,6 @@
 import { GatewayError } from './stac';
 import { supabaseApiHeaders } from './supabase';
-import { makeCaptureWindow, type CaptureWindow } from '../../src/app/lib/capture-window';
+import { makeCaptureWindow, todayInTimeZone, type CaptureWindow } from '../../src/app/lib/capture-window';
 
 export type InquiryType = 'history' | 'tasking' | 'analysis';
 export type InquiryStatus = 'submitted' | 'pending' | 'quoting' | 'quoted' | 'confirmed';
@@ -101,6 +101,9 @@ export function parseInquiryInput(body: unknown): InquiryInput {
     try {
       const window = input.captureWindow as Record<string, string>;
       captureWindow = makeCaptureWindow(window.startDate, window.endDate, window.timeZone);
+      if (captureWindow.startDate < todayInTimeZone(captureWindow.timeZone)) {
+        throw new Error('Capture window must start today or later');
+      }
     } catch {
       throw new GatewayError(400, 'Invalid capture dates or time zone');
     }

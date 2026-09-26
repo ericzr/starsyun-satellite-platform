@@ -75,10 +75,53 @@ function normalizedProduct(feature: Record<string, unknown>, config: StacAdapter
 async function upsertProducts(features: unknown[], config: StacAdapterConfig) {
   const rows = features.filter((feature): feature is Record<string, unknown> => Boolean(feature && typeof feature === 'object')).map((feature) => normalizedProduct(feature, config));
   if (!rows.length) return 0;
-  const response = await supabaseRequest('provider_products?on_conflict=provider_id,external_id', {
-    method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows),
-  });
-  await response.text().catch(() => undefined);
+  // A catalog refresh is an upstream metadata operation.  It must never
+  // overwrite operator-reviewed availability, pricing, licensing, or source
+  // links.  PostgREST upserts merge every supplied column on conflict, so we
+  // insert only new records and patch existing records with source fields.
+  const externalIds = rows.map((row) => row.external_id);
+  const existing = new Set<string>();
+  for (let offset = 0; offset < externalIds.length; offset += 50) {
+    const chunk = externalIds.slice(offset, offset + 50);
+    const query = new URLSearchParams({
+      select: 'external_id',
+      provider_id: `eq.${config.id}`,
+      // URLSearchParams performs the single required URL encoding. Encoding
+      // each id first would turn `%` into `%25` and miss valid upstream IDs.
+      external_id: `in.(${chunk.join(',')})`,
+    });
+    const response = await supabaseRequest(`provider_products?${query.toString()}`);
+    const records = (await response.json()) as Array<{ external_id?: unknown }>;
+    records.forEach((record) => {
+      if (typeof record.external_id === 'string') existing.add(record.external_id);
+    });
+  }
+
+  const newRows = rows.filter((row) => !existing.has(row.external_id));
+  if (newRows.length) {
+    const response = await supabaseRequest('provider_products?on_conflict=provider_id,external_id', {
+      method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(newRows),
+    });
+    await response.text().catch(() => undefined);
+  }
+
+  const refreshedAt = new Date().toISOString();
+  await Promise.all(rows.filter((row) => existing.has(row.external_id)).map(async (row) => {
+    const query = new URLSearchParams({ provider_id: `eq.${config.id}`, external_id: `eq.${row.external_id}` });
+    const response = await supabaseRequest(`provider_products?${query.toString()}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        collection: row.collection,
+        capture_time: row.capture_time,
+        geometry: row.geometry,
+        bbox: row.bbox,
+        metadata: row.metadata,
+        indexed_at: refreshedAt,
+      }),
+    });
+    await response.text().catch(() => undefined);
+  }));
   return rows.length;
 }
 

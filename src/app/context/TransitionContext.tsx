@@ -16,7 +16,8 @@ export function TransitionProvider({ children }: { children: ReactNode }) {
     setPendingCallback(() => callback);
   };
 
-  const handleComplete = () => {
+  // Reserved for the transition overlay once it is wired into the provider.
+  const _handleComplete = () => {
     setIsTransitioning(false);
     if (pendingCallback) {
       pendingCallback();

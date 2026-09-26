@@ -10,6 +10,7 @@ import { Button } from './ui/button';
 
 type MlMap = ML.Map;
 type LngLatBoundsLike = ML.LngLatBoundsLike;
+type MapLibreWindow = Window & { maplibregl?: typeof ML };
 
 const MAPLIBRE_VERSION = '4.7.1';
 const CDN_JS = [
@@ -26,8 +27,12 @@ const CDN_CSS = [
 // `maplibregl` namespace.
 let maplibrePromise: Promise<typeof ML> | null = null;
 function loadMapLibre(): Promise<typeof ML> {
-  if (typeof window !== 'undefined' && (window as any).maplibregl) {
-    return Promise.resolve((window as any).maplibregl as typeof ML);
+  const maplibreGlobal =
+    typeof window !== 'undefined'
+      ? (window as unknown as MapLibreWindow).maplibregl
+      : undefined;
+  if (maplibreGlobal) {
+    return Promise.resolve(maplibreGlobal);
   }
   if (maplibrePromise) return maplibrePromise;
   maplibrePromise = new Promise<typeof ML>((resolve, reject) => {
@@ -49,7 +54,11 @@ function loadMapLibre(): Promise<typeof ML> {
         `script[data-maplibre="${index}"]`,
       );
       if (existing) {
-        existing.addEventListener('load', () => resolve((window as any).maplibregl));
+        existing.addEventListener('load', () => {
+          const maplibreGlobal = (window as unknown as MapLibreWindow).maplibregl;
+          if (maplibreGlobal) resolve(maplibreGlobal);
+          else reject(new Error('MapLibre GL loaded without a global namespace'));
+        });
         existing.addEventListener('error', () =>
           index + 1 < CDN_JS.length
             ? loadScript(index + 1)
@@ -61,7 +70,11 @@ function loadMapLibre(): Promise<typeof ML> {
       script.src = CDN_JS[index];
       script.async = true;
       script.setAttribute('data-maplibre', String(index));
-      script.onload = () => resolve((window as any).maplibregl as typeof ML);
+      script.onload = () => {
+        const maplibreGlobal = (window as unknown as MapLibreWindow).maplibregl;
+        if (maplibreGlobal) resolve(maplibreGlobal);
+        else reject(new Error('MapLibre GL loaded without a global namespace'));
+      };
       script.onerror = () => {
         script.remove();
         if (index + 1 < CDN_JS.length) loadScript(index + 1);
@@ -397,7 +410,6 @@ export function MapCanvas({
       .catch((err: unknown) => {
         // Swallow abort errors from teardown/HMR; surface anything unexpected.
         if (err && (err as { name?: string }).name === 'AbortError') return;
-        // eslint-disable-next-line no-console
         console.error('MapCanvas init failed', err);
       });
 
@@ -412,6 +424,8 @@ export function MapCanvas({
       mapRef.current = null;
       readyRef.current = false;
     };
+    // Map initialization is intentionally one-shot. The mutable refs used by
+    // event handlers keep subsequent prop changes without recreating the map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -442,15 +456,14 @@ export function MapCanvas({
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
     pushData(map);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aoi, boundary, footprints, highlightId]);
 
   // Focus (fly to)
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !focus) return;
-    map.flyTo({ center: focus.center, zoom: focus.zoom, speed: 1.4, essential: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const nextFocus = focusRef.current;
+    if (!map || !nextFocus) return;
+    map.flyTo({ center: nextFocus.center, zoom: nextFocus.zoom, speed: 1.4, essential: true });
   }, [focus?.key]);
 
   // Fit to bbox
@@ -462,7 +475,6 @@ export function MapCanvas({
       [fitBBox[2], fitBBox[3]],
     ];
     map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitBBox]);
 
   // Toggle drag pan while drawing

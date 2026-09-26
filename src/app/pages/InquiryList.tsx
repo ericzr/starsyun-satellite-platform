@@ -5,7 +5,7 @@ import { useUser } from '../context/UserContext';
 import { loadCustomerInquiries, type Inquiry, type InquiryStatus } from '../lib/inquiries';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { FileText, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { FileText, Clock, CheckCircle, type LucideIcon } from 'lucide-react';
 import { fmtCny, fmtCnyEn } from '../lib/pricing';
 
 export function InquiryList() {
@@ -33,7 +33,7 @@ export function InquiryList() {
       label: string;
       labelEn: string;
       variant: 'default' | 'secondary' | 'destructive' | 'outline';
-      icon: any;
+      icon: LucideIcon;
     }
   > = {
     submitted: { label: '已提交', labelEn: 'Submitted', variant: 'secondary', icon: Clock },

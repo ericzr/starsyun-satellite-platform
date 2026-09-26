@@ -10,9 +10,9 @@ export function Cart() {
   const { lang } = useI18n();
   const navigate = useNavigate();
   const { items, removeFromCart, updateQuantity, cartTotal } = useCart();
-  const checkoutEnabled = import.meta.env.DEV
-    || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true'
-    || import.meta.env.VITE_ENABLE_CHECKOUT === 'true';
+  // This cart has no server order creation endpoint yet. Keep its checkout
+  // action limited to local/demo mode so production cannot create a fake order.
+  const checkoutEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_DATA === 'true';
 
   const money = (v: number) => (lang === 'zh' ? fmtCny(v) : fmtCnyEn(v));
   const cny = lang === 'zh' ? '元' : 'CNY';

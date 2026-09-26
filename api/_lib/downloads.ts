@@ -1,4 +1,4 @@
-import { GatewayError } from './stac';
+import { GatewayError, getEarthSearchItem } from './stac';
 import { persistenceConfig } from './inquiries';
 import { supabaseApiHeaders } from './supabase';
 
@@ -48,6 +48,65 @@ function validSourceUrl(value: unknown) {
   }
 }
 
+function uuidLike(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value);
+}
+
+function sourceUrlsFromStacItem(item: unknown) {
+  const value = item as {
+    links?: Array<{ href?: unknown }>;
+    assets?: Record<string, { href?: unknown }>;
+  };
+  const urls = new Set<string>();
+  const add = (href: unknown) => {
+    if (typeof href !== 'string') return;
+    try {
+      urls.add(new URL(href).toString());
+    } catch {
+      // Ignore malformed upstream links; only canonical HTTP(S) URLs can be
+      // accepted by validSourceUrl below.
+    }
+  };
+  value.links?.forEach((link) => {
+    add(link.href);
+  });
+  Object.values(value.assets ?? {}).forEach((asset) => {
+    add(asset?.href);
+  });
+  return urls;
+}
+
+async function verifyPublicProduct(input: PublicDownloadInput) {
+  if (input.productId.startsWith('earth-search-')) {
+    const externalId = input.productId.slice('earth-search-'.length);
+    if (!/^[A-Za-z0-9._-]{1,160}$/u.test(externalId) || input.productCode !== externalId) {
+      throw new GatewayError(400, 'public product identity is invalid');
+    }
+    let item: unknown;
+    try {
+      item = await getEarthSearchItem(externalId);
+    } catch (error) {
+      if (error instanceof GatewayError && error.status === 404) throw error;
+      throw new GatewayError(502, 'public product verification failed');
+    }
+    if (!sourceUrlsFromStacItem(item).has(input.sourceUrl)) {
+      throw new GatewayError(409, 'source URL does not belong to this public product');
+    }
+    return;
+  }
+
+  if (!input.productId.startsWith('catalog-') || !uuidLike(input.productId.slice('catalog-'.length))) {
+    throw new GatewayError(400, 'public product identity is invalid');
+  }
+  const productId = input.productId.slice('catalog-'.length);
+  const response = await rest(`provider_products?select=external_id,source_url,availability&id=eq.${productId}&availability=eq.available&limit=1`);
+  const rows = (await response.json()) as Array<{ external_id?: unknown; source_url?: unknown }>;
+  const row = rows[0];
+  if (!row || row.external_id !== input.productCode || row.source_url !== input.sourceUrl) {
+    throw new GatewayError(409, 'public product is not an available catalog record');
+  }
+}
+
 function recordFromRow(row: Row): PublicDownloadRecord {
   return {
     id: String(row.id ?? ''),
@@ -90,6 +149,7 @@ export function parsePublicDownloadInput(body: unknown): PublicDownloadInput {
 
 export async function recordPublicDownload(userId: string, input: PublicDownloadInput) {
   validUserId(userId);
+  await verifyPublicProduct(input);
   const now = new Date().toISOString();
   const response = await rest('public_downloads', {
     method: 'POST',
