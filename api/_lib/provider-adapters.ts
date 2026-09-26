@@ -80,20 +80,24 @@ async function upsertProducts(features: unknown[], config: StacAdapterConfig) {
   // links.  PostgREST upserts merge every supplied column on conflict, so we
   // insert only new records and patch existing records with source fields.
   const externalIds = rows.map((row) => row.external_id);
-  const existing = new Set<string>();
+  const existing = new Map<string, Record<string, unknown>>();
   for (let offset = 0; offset < externalIds.length; offset += 50) {
     const chunk = externalIds.slice(offset, offset + 50);
     const query = new URLSearchParams({
-      select: 'external_id',
+      select: 'external_id,metadata',
       provider_id: `eq.${config.id}`,
       // URLSearchParams performs the single required URL encoding. Encoding
       // each id first would turn `%` into `%25` and miss valid upstream IDs.
       external_id: `in.(${chunk.join(',')})`,
     });
     const response = await supabaseRequest(`provider_products?${query.toString()}`);
-    const records = (await response.json()) as Array<{ external_id?: unknown }>;
+    const records = (await response.json()) as Array<{ external_id?: unknown; metadata?: unknown }>;
     records.forEach((record) => {
-      if (typeof record.external_id === 'string') existing.add(record.external_id);
+      if (typeof record.external_id === 'string') {
+        existing.set(record.external_id, record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata)
+          ? record.metadata as Record<string, unknown>
+          : {});
+      }
     });
   }
 
@@ -108,6 +112,10 @@ async function upsertProducts(features: unknown[], config: StacAdapterConfig) {
   const refreshedAt = new Date().toISOString();
   await Promise.all(rows.filter((row) => existing.has(row.external_id)).map(async (row) => {
     const query = new URLSearchParams({ provider_id: `eq.${config.id}`, external_id: `eq.${row.external_id}` });
+    const previousMetadata = existing.get(row.external_id) ?? {};
+    const preservedMetadata = Object.fromEntries(
+      Object.entries(previousMetadata).filter(([key]) => !(key in row.metadata)),
+    );
     const response = await supabaseRequest(`provider_products?${query.toString()}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
@@ -116,7 +124,9 @@ async function upsertProducts(features: unknown[], config: StacAdapterConfig) {
         capture_time: row.capture_time,
         geometry: row.geometry,
         bbox: row.bbox,
-        metadata: row.metadata,
+        // Refresh known upstream fields while retaining operator-enriched
+        // metadata keys that the source did not provide.
+        metadata: { ...row.metadata, ...preservedMetadata },
         indexed_at: refreshedAt,
       }),
     });
