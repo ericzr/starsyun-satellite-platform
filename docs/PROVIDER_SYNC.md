@@ -2,7 +2,7 @@
 
 当前实现提供一条服务端同步边界：
 
-- `earth-search` Adapter 已实现 `health` 和 `catalog`。它读取 Earth Search 的真实 STAC 结果，写入 `provider_products`，产品默认保持 `availability=unknown`，不会自动变成可销售库存。
+- `earth-search`、`copernicus` 和 `planetary-computer` Adapter 已实现 `health` 和 `catalog`。它们读取各自的真实 STAC 结果，写入 `provider_products`，产品默认保持 `availability=unknown`，不会自动变成可销售库存。
 - 商业供应商目前没有启用 Adapter。没有企业合同、价格、区域授权、配额和交付验收时，`data_sources.status` 必须保持 `planned` 或 `paused`。
 - `POST /api/admin/provider-sync` 由管理员会话或服务器专用 `x-provider-sync-token` 调用；每次运行写入 `provider_sync_runs`，记录状态、数量、摘要和错误。
 - `GET /api/admin/provider-sync` 返回 Adapter 能力和最近 100 次运行，只有管理员会话可读。
@@ -32,13 +32,14 @@ systemctl list-timers starsyun-provider-sync.timer
 sudo journalctl -u starsyun-provider-sync.service -n 50 --no-pager
 ```
 
-公开目录每日同步还需要安装 `starsyun-provider-catalog.service` 和 `.timer`：
+公开目录每日同步还需要安装 `starsyun-provider-catalog.service` 和 `.timer`。当前服务器每次执行一个配置的公开源；新增源前先在服务器逐个手动运行并观察数量与错误。
 
 ```bash
 sudo systemctl enable --now starsyun-provider-catalog.timer
 systemctl list-timers 'starsyun-provider-*'
 sudo journalctl -u starsyun-provider-catalog.service -n 50 --no-pager
 ```
+
 
 首次启用前，先执行 Supabase 的 `013_provider_sync_runs.sql`，再用健康检查确认上游可达。
 
