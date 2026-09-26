@@ -26,7 +26,7 @@
     "inventory:production": "node scripts/production-inventory.mjs",
     "sync:provider": "node scripts/provider-sync.mjs",
     "test:admin-data": "node --test scripts/tests/admin-data-validation.test.mjs",
-    "test:admin-localization": "node --test scripts/tests/country-iso2.test.mjs",
+    "test:admin-localization": "node --test scripts/tests/country-iso2.test.mjs scripts/tests/admin-localization-fallback.test.mjs",
     "import:admin": "node scripts/import-geoboundaries.mjs",
     "start": "node dist-server/server.js",
     "preview": "vite preview",

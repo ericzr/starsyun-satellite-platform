@@ -1,11 +1,20 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { zh, type Translation } from './zh';
 import { en } from './en';
-import { ar } from './ar';
-import { es } from './es';
 
-// Supported languages
+// Languages understood by platform data (for example administrative names).
+// This is intentionally broader than the languages exposed by the website.
 export type Lang = 'zh' | 'en' | 'ar' | 'es' | 'fr' | 'pt' | 'ru' | 'ja' | 'ko' | 'de';
+
+// A language is only exposed after every customer-facing flow has been
+// translated and reviewed. Partial dictionaries must never make an English
+// interface look like a completed localization.
+export const PUBLIC_LANGUAGE_CODES = ['zh', 'en'] as const;
+export type PublicLang = (typeof PUBLIC_LANGUAGE_CODES)[number];
+
+export function isPublicLanguage(value: unknown): value is PublicLang {
+  return typeof value === 'string' && PUBLIC_LANGUAGE_CODES.some((lang) => lang === value);
+}
 
 // Language display names
 export const LANGUAGES: Record<Lang, { name: string; nativeName: string }> = {
@@ -22,84 +31,42 @@ export const LANGUAGES: Record<Lang, { name: string; nativeName: string }> = {
 };
 
 type Dict = Translation;
-type DeepPartial<T> = T extends (...args: infer Args) => infer Result
-  ? (...args: Args) => Result
-  : T extends object
-    ? { [Key in keyof T]?: DeepPartial<T[Key]> }
-    : string;
-
-function mergeDictionary(base: Dict, override: DeepPartial<Dict>): Dict {
-  const output: Record<string, unknown> = { ...base };
-  Object.entries(override).forEach(([key, value]) => {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const baseValue = (base as unknown as Record<string, unknown>)[key];
-      output[key] = mergeDictionary(
-        baseValue as Dict,
-        value as DeepPartial<Dict>,
-      );
-    } else if (value !== undefined) {
-      output[key] = value;
-    }
-  });
-  return output as Dict;
-}
-
-// Import all language dictionaries
-// For languages without full translation, fallback to English
-const dictionaries: Record<Lang, Dict> = {
+const dictionaries: Record<PublicLang, Dict> = {
   zh,
   en,
-  ar: mergeDictionary(en, ar),
-  es: mergeDictionary(en, es),
-  fr: en, // TODO: Add French translation
-  pt: en, // TODO: Add Portuguese translation
-  ru: en, // TODO: Add Russian translation
-  ja: en, // TODO: Add Japanese translation
-  ko: en, // TODO: Add Korean translation
-  de: en, // TODO: Add German translation
 };
 
 interface I18nContextValue {
-  lang: Lang;
-  setLang: (l: Lang) => void;
+  lang: PublicLang;
+  setLang: (l: PublicLang) => void;
   t: Dict;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 // Detect browser language
-function detectBrowserLanguage(): Lang {
+function detectBrowserLanguage(): PublicLang {
   if (typeof navigator === 'undefined') return 'zh';
 
   const browserLang = navigator.language.toLowerCase();
 
-  // Match exact locale (e.g., 'zh-cn' -> 'zh')
+  // Only select reviewed website languages. Other browser locales use the
+  // complete English experience until their dictionaries pass launch review.
   if (browserLang.startsWith('zh')) return 'zh';
-  if (browserLang.startsWith('en')) return 'en';
-  if (browserLang.startsWith('ar')) return 'ar';
-  if (browserLang.startsWith('es')) return 'es';
-  if (browserLang.startsWith('fr')) return 'fr';
-  if (browserLang.startsWith('pt')) return 'pt';
-  if (browserLang.startsWith('ru')) return 'ru';
-  if (browserLang.startsWith('ja')) return 'ja';
-  if (browserLang.startsWith('ko')) return 'ko';
-  if (browserLang.startsWith('de')) return 'de';
-
-  // Default to English for unsupported languages
   return 'en';
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(() => {
+  const [lang, setLangState] = useState<PublicLang>(() => {
     if (typeof localStorage !== 'undefined') {
-      const saved = localStorage.getItem('orbitdata-lang') as Lang;
-      if (saved && LANGUAGES[saved]) return saved;
+      const saved = localStorage.getItem('orbitdata-lang');
+      if (isPublicLanguage(saved)) return saved;
     }
     // Auto-detect browser language
     return detectBrowserLanguage();
   });
 
-  const setLang = (l: Lang) => {
+  const setLang = (l: PublicLang) => {
     setLangState(l);
     try {
       localStorage.setItem('orbitdata-lang', l);
@@ -110,8 +77,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = lang;
-    // Set RTL direction for Arabic
-    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.dir = 'ltr';
   }, [lang]);
 
   return (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   TrendingUp,
   FileStack,
@@ -7,6 +7,8 @@ import {
   CheckCircle2,
   FilePlus2,
   RotateCcw,
+  RefreshCw,
+  Database,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
@@ -55,6 +57,13 @@ import {
   type DeliveryAsset,
   type ServerOrder,
 } from '../lib/orders';
+import {
+  loadProviderSyncOverview,
+  startProviderSync,
+  type ProviderSyncMode,
+  type ProviderSyncOverview,
+  type ProviderSyncRun,
+} from '../lib/provider-sync';
 
 const STATUS_ORDER: InquiryStatus[] = ['submitted', 'pending', 'quoting', 'quoted', 'confirmed'];
 
@@ -92,6 +101,13 @@ export function Admin() {
     sizeBytes: '',
     sha256: '',
   });
+  const [providerSync, setProviderSync] = useState<ProviderSyncOverview>({
+    adapters: [],
+    runs: [],
+  });
+  const [providerSyncLoading, setProviderSyncLoading] = useState(true);
+  const [providerSyncError, setProviderSyncError] = useState('');
+  const [providerSyncBusy, setProviderSyncBusy] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -107,6 +123,56 @@ export function Admin() {
       active = false;
     };
   }, []);
+
+  const refreshProviderSync = useCallback(async () => {
+    setProviderSyncLoading(true);
+    setProviderSyncError('');
+    try {
+      setProviderSync(await loadProviderSyncOverview());
+    } catch (error) {
+      setProviderSyncError(
+        error instanceof Error
+          ? error.message
+          : lang === 'zh'
+            ? '同步状态加载失败'
+            : 'Could not load sync status',
+      );
+    } finally {
+      setProviderSyncLoading(false);
+    }
+  }, [lang]);
+
+  useEffect(() => {
+    void refreshProviderSync();
+  }, [refreshProviderSync]);
+
+  const runProviderSync = async (providerId: string, mode: ProviderSyncMode) => {
+    const key = `${providerId}:${mode}`;
+    setProviderSyncBusy(key);
+    try {
+      const run = await startProviderSync(providerId, mode);
+      setProviderSync((current) => ({
+        ...current,
+        runs: [run, ...current.runs.filter((item) => item.id !== run.id)],
+      }));
+      toast.success(
+        lang === 'zh'
+          ? `${providerDisplayName(providerId)}${mode === 'health' ? '健康检查' : '目录同步'}已完成`
+          : `${providerDisplayName(providerId)} ${mode === 'health' ? 'health check' : 'catalog sync'} completed`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : lang === 'zh'
+            ? '数据源同步失败'
+            : 'Provider sync failed',
+      );
+      await refreshProviderSync();
+    } finally {
+      setProviderSyncBusy('');
+    }
+  };
 
   const openDelivery = async (order: ServerOrder) => {
     setDeliveryOrder(order);
@@ -344,6 +410,88 @@ export function Admin() {
               </div>
             </div>
           ))}
+        </div>
+
+        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-card sm:mt-8">
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <Database className="size-4 text-primary" />
+                <h3 className="text-xs sm:text-sm">
+                  {lang === 'zh' ? '数据源同步监控' : 'Provider sync monitoring'}
+                </h3>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {lang === 'zh'
+                  ? '同步成功仅表示已索引公开目录，不代表已获得销售或交付授权。'
+                  : 'A successful sync means the public catalog is indexed; it does not grant sales or delivery rights.'}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void refreshProviderSync()}
+              disabled={providerSyncLoading || Boolean(providerSyncBusy)}
+            >
+              <RefreshCw className={`size-3.5 ${providerSyncLoading ? 'animate-spin' : ''}`} />
+              {lang === 'zh' ? '刷新' : 'Refresh'}
+            </Button>
+          </div>
+          {providerSyncError ? (
+            <div className="px-4 py-8 text-center text-sm text-destructive sm:px-5">
+              {providerSyncError}
+            </div>
+          ) : providerSyncLoading && providerSync.adapters.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground sm:px-5">
+              {lang === 'zh' ? '正在加载同步状态…' : 'Loading sync status…'}
+            </div>
+          ) : providerSync.adapters.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground sm:px-5">
+              {lang === 'zh' ? '暂无已实现的数据源 Adapter' : 'No provider adapters are implemented'}
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {providerSync.adapters.map((adapter) => {
+                const healthRun = latestProviderRun(providerSync, adapter.id, 'health');
+                const catalogRun = latestProviderRun(providerSync, adapter.id, 'catalog');
+                return (
+                  <div key={adapter.id} className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center sm:px-5">
+                    <div className="min-w-0">
+                      <p className="text-sm">{providerDisplayName(adapter.id)}</p>
+                      <p className="mt-1 font-mono text-[10px] text-muted-foreground">{adapter.id}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <ProviderRunSummary label={lang === 'zh' ? '健康' : 'Health'} run={healthRun} lang={lang} />
+                      <ProviderRunSummary label={lang === 'zh' ? '目录' : 'Catalog'} run={catalogRun} lang={lang} />
+                    </div>
+                    <div className="flex flex-wrap gap-2 sm:justify-end">
+                      {adapter.capabilities.includes('health') && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={Boolean(providerSyncBusy)}
+                          onClick={() => void runProviderSync(adapter.id, 'health')}
+                        >
+                          {providerSyncBusy === `${adapter.id}:health` && <RefreshCw className="size-3.5 animate-spin" />}
+                          {lang === 'zh' ? '检查' : 'Check'}
+                        </Button>
+                      )}
+                      {adapter.capabilities.includes('catalog') && (
+                        <Button
+                          size="sm"
+                          disabled={Boolean(providerSyncBusy)}
+                          onClick={() => void runProviderSync(adapter.id, 'catalog')}
+                        >
+                          {providerSyncBusy === `${adapter.id}:catalog` && <RefreshCw className="size-3.5 animate-spin" />}
+                          {lang === 'zh' ? '同步目录' : 'Sync catalog'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Table */}
@@ -862,4 +1010,92 @@ function formatBytes(value?: number) {
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
   return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+function providerDisplayName(providerId: string) {
+  const names: Record<string, string> = {
+    'earth-search': 'Earth Search',
+    copernicus: 'Copernicus Data Space',
+    'planetary-computer': 'Microsoft Planetary Computer',
+  };
+  return names[providerId] ?? providerId;
+}
+
+function latestProviderRun(
+  overview: ProviderSyncOverview,
+  providerId: string,
+  mode: ProviderSyncMode,
+) {
+  return overview.runs
+    .filter((run) => run.providerId === providerId && run.mode === mode)
+    .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt))[0];
+}
+
+function ProviderRunSummary({
+  label,
+  run,
+  lang,
+}: {
+  label: string;
+  run?: ProviderSyncRun;
+  lang: string;
+}) {
+  if (!run) {
+    return (
+      <div className="rounded-md border border-border bg-panel px-2 py-1.5 text-muted-foreground">
+        <span>{label}</span>
+        <span className="ml-1">· {lang === 'zh' ? '无记录' : 'No run'}</span>
+      </div>
+    );
+  }
+  const succeeded = run.status === 'succeeded';
+  const running = run.status === 'running';
+  const status = running
+    ? lang === 'zh'
+      ? '运行中'
+      : 'Running'
+    : succeeded
+      ? lang === 'zh'
+        ? '成功'
+        : 'Succeeded'
+      : lang === 'zh'
+        ? '失败'
+        : 'Failed';
+  const timestamp = run.finishedAt || run.startedAt;
+  return (
+    <div className="min-w-0 rounded-md border border-border bg-panel px-2 py-1.5">
+      <div className="flex items-center gap-1.5">
+        <span className="text-muted-foreground">{label}</span>
+        <span
+          className={
+            running
+              ? 'text-amber-500'
+              : succeeded
+                ? 'text-emerald-500'
+                : 'text-destructive'
+          }
+        >
+          {status}
+        </span>
+      </div>
+      <div className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">
+        {run.mode === 'catalog' && succeeded
+          ? `${run.recordsUpserted}/${run.recordsSeen} · `
+          : ''}
+        {timestamp
+          ? new Date(timestamp).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', {
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : '—'}
+      </div>
+      {run.errorMessage && (
+        <p className="mt-0.5 truncate text-[9px] text-destructive" title={run.errorMessage}>
+          {run.errorMessage}
+        </p>
+      )}
+    </div>
+  );
 }

@@ -41,6 +41,8 @@ export default tseslint.config(
             'useTransition',
             'useUser',
             'LANGUAGES',
+            'PUBLIC_LANGUAGE_CODES',
+            'isPublicLanguage',
             'useI18n',
             'useLocale',
           ],

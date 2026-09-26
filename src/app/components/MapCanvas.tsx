@@ -801,6 +801,9 @@ const MAP_LANGUAGE_FIELDS: Record<Lang, string> = {
 
 function applyMapLanguage(map: MlMap, lang: Lang) {
   const preferredField = MAP_LANGUAGE_FIELDS[lang] ?? 'name:en';
+  const fallbackFields = lang === 'en'
+    ? [['get', 'name_en'], ['get', 'name']]
+    : [['get', 'name'], ['get', 'name_en']];
   const style = map.getStyle();
   for (const layer of style.layers ?? []) {
     if (layer.type !== 'symbol' || !layer.layout?.['text-field']) continue;
@@ -809,21 +812,21 @@ function applyMapLanguage(map: MlMap, lang: Lang) {
     map.setLayoutProperty(layer.id, 'text-field', [
       'coalesce',
       ['get', preferredField],
-      ['get', 'name_en'],
-      ['get', 'name'],
+      ...fallbackFields,
     ]);
   }
-  setTaiwanProvinceLabelLanguage(map, preferredField);
+  setTaiwanProvinceLabelLanguage(map, preferredField, lang);
   applyPlaceLabelHierarchy(map);
 }
 
-function setTaiwanProvinceLabelLanguage(map: MlMap, preferredField: string) {
+function setTaiwanProvinceLabelLanguage(map: MlMap, preferredField: string, lang: Lang) {
   if (!map.getLayer('taiwan-province-label')) return;
   map.setLayoutProperty('taiwan-province-label', 'text-field', [
     'coalesce',
     ['get', preferredField],
-    ['get', 'name:en'],
-    ['get', 'name'],
+    ...(lang === 'en'
+      ? [['get', 'name:en'], ['get', 'name']]
+      : [['get', 'name'], ['get', 'name:en']]),
   ]);
 }
 

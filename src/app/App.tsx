@@ -45,7 +45,14 @@ export default function App() {
                     <Routes>
                       <Route path="/" element={<Home />} />
                       <Route path="/explore" element={<Explore />} />
-                      <Route path="/analysis" element={<Analysis />} />
+                      <Route
+                        path="/analysis"
+                        element={
+                          <ProtectedRoute>
+                            <Analysis />
+                          </ProtectedRoute>
+                        }
+                      />
                       <Route path="/product/:id" element={<ProductDetail />} />
                       <Route path="/login" element={<Login />} />
                       <Route

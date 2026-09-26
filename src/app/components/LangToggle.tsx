@@ -1,6 +1,6 @@
 import { Languages, Check, ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
-import { useI18n, LANGUAGES, type Lang } from '../i18n';
+import { useI18n, LANGUAGES, PUBLIC_LANGUAGE_CODES, type PublicLang } from '../i18n';
 import { Button } from './ui/button';
 
 export function LangToggle() {
@@ -8,13 +8,7 @@ export function LangToggle() {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Primary languages (shown first)
-  const primaryLangs: Lang[] = ['zh', 'en'];
-
-  // Other languages (shown after separator)
-  const otherLangs: Lang[] = ['ar', 'es', 'fr', 'pt', 'ru', 'ja', 'ko', 'de'];
-
-  const handleSelect = (l: Lang) => {
+  const handleSelect = (l: PublicLang) => {
     setLang(l);
     setOpen(false);
   };
@@ -36,6 +30,7 @@ export function LangToggle() {
   return (
     <div className="relative" ref={dropdownRef}>
       <Button
+        type="button"
         variant="ghost"
         size="sm"
         className="h-9 gap-1.5 rounded-md border border-border px-3 text-xs"
@@ -49,21 +44,9 @@ export function LangToggle() {
       {open && (
         <div className="absolute right-0 top-full z-50 mt-2 w-48 rounded-md border border-border bg-popover p-2 shadow-md">
           <div className="space-y-1">
-            {primaryLangs.map((l) => (
+            {PUBLIC_LANGUAGE_CODES.map((l) => (
               <button
-                key={l}
-                onClick={() => handleSelect(l)}
-                className="flex w-full cursor-pointer items-center justify-between rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-              >
-                <span>{LANGUAGES[l].nativeName}</span>
-                {lang === l && <Check className="size-4 text-primary" />}
-              </button>
-            ))}
-          </div>
-          <div className="my-1 h-px bg-border" />
-          <div className="space-y-1">
-            {otherLangs.map((l) => (
-              <button
+                type="button"
                 key={l}
                 onClick={() => handleSelect(l)}
                 className="flex w-full cursor-pointer items-center justify-between rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"

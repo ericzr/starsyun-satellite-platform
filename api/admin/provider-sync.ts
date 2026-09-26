@@ -58,7 +58,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const finishedAt = new Date().toISOString();
       const nextRunAt = new Date(Date.parse(finishedAt) + (syncInput.mode === 'health' ? 5 * 60_000 : 24 * 60 * 60_000)).toISOString();
       await rest(`provider_sync_runs?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status: 'succeeded', result_summary: result.summary, records_seen: result.recordsSeen, records_upserted: result.recordsUpserted, finished_at: finishedAt, next_run_at: nextRunAt }) });
-      return res.status(200).json({ run: { id, providerId: syncInput.providerId, mode: syncInput.mode, status: 'succeeded', ...result } });
+      return res.status(200).json({ run: { id, providerId: syncInput.providerId, mode: syncInput.mode, status: 'succeeded', startedAt, finishedAt, nextRunAt, ...result } });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'provider sync failed';
       await rest(`provider_sync_runs?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status: 'failed', error_code: 'adapter_error', error_message: message.slice(0, 500), finished_at: new Date().toISOString() }) }).catch(() => undefined);

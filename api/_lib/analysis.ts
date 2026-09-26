@@ -67,7 +67,20 @@ export interface AnalysisJobInput {
   orderId?: string;
   serviceType: AnalysisServiceType;
   inputSpec: Record<string, unknown>;
-  outputSpec: Record<string, unknown>;
+}
+
+const deliverables = ['analysis-report', 'geospatial-data', 'report-and-data'] as const;
+
+function analysisInputSpec(value: unknown) {
+  const spec = parseSpec(value, 'inputSpec');
+  const objective = typeof spec.objective === 'string' ? spec.objective.trim() : '';
+  if (objective.length < 5) throw new GatewayError(400, 'analysis objective is required');
+  if (objective.length > 2000) throw new GatewayError(400, 'analysis objective is too long');
+  const requestedDeliverable = spec.requestedDeliverable;
+  if (!deliverables.includes(requestedDeliverable as (typeof deliverables)[number])) {
+    throw new GatewayError(400, 'requestedDeliverable is invalid');
+  }
+  return { objective, requestedDeliverable };
 }
 
 export function parseAnalysisJobInput(body: unknown): AnalysisJobInput {
@@ -76,22 +89,28 @@ export function parseAnalysisJobInput(body: unknown): AnalysisJobInput {
   if (serviceType !== 'change-detection' && serviceType !== 'land-cover' && serviceType !== 'feature-extraction' && serviceType !== 'time-series' && serviceType !== 'custom-analysis') throw new GatewayError(400, 'serviceType is invalid');
   const inquiryId = input.inquiryId == null || input.inquiryId === '' ? undefined : uuid(input.inquiryId, 'inquiryId');
   const orderId = input.orderId == null || input.orderId === '' ? undefined : uuid(input.orderId, 'orderId');
-  if (!inquiryId && !orderId) throw new GatewayError(400, 'inquiryId or orderId is required');
-  return { inquiryId, orderId, serviceType, inputSpec: parseSpec(input.inputSpec, 'inputSpec'), outputSpec: parseSpec(input.outputSpec, 'outputSpec') };
+  if ((!inquiryId && !orderId) || (inquiryId && orderId)) {
+    throw new GatewayError(400, 'exactly one inquiryId or orderId is required');
+  }
+  return { inquiryId, orderId, serviceType, inputSpec: analysisInputSpec(input.inputSpec) };
 }
 
 export async function createAnalysisJob(userId: string, input: AnalysisJobInput) {
   uuid(userId, 'customer id');
   if (input.inquiryId) {
     const inquiries = await listUserInquiries(userId);
-    if (!inquiries.some((inquiry) => inquiry.id === input.inquiryId)) throw new GatewayError(404, 'inquiry not found');
+    const inquiry = inquiries.find((item) => item.id === input.inquiryId);
+    if (!inquiry) throw new GatewayError(404, 'inquiry not found');
+    if (inquiry.type !== 'analysis') {
+      throw new GatewayError(409, 'only an analysis inquiry can be used as an analysis input');
+    }
   }
   if (input.orderId) {
     const order = await getCustomerOrder(input.orderId, userId);
     if (!order) throw new GatewayError(404, 'order not found');
     if (!['paid', 'fulfillment', 'delivered'].includes(order.status)) throw new GatewayError(409, 'order is not ready for analysis');
   }
-  const record = { id: crypto.randomUUID(), inquiry_id: input.inquiryId ?? null, order_id: input.orderId ?? null, service_type: input.serviceType, status: 'queued', input_spec: input.inputSpec, output_spec: input.outputSpec, created_at: new Date().toISOString() };
+  const record = { id: crypto.randomUUID(), inquiry_id: input.inquiryId ?? null, order_id: input.orderId ?? null, service_type: input.serviceType, status: 'queued', input_spec: input.inputSpec, output_spec: {}, created_at: new Date().toISOString() };
   const response = await rest('analysis_jobs', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(record) });
   const rows = (await response.json()) as Row[];
   if (!rows[0]) throw new GatewayError(502, 'analysis persistence returned no job');
