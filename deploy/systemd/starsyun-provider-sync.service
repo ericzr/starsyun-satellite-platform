@@ -9,6 +9,7 @@ User=starsyun
 Group=starsyun
 WorkingDirectory=/srv/starsyun/current
 EnvironmentFile=/etc/starsyun/starsyun.env
+Environment=PROVIDER_SYNC_PROVIDERS=earth-search,copernicus,planetary-computer
 ExecStart=/usr/bin/node /srv/starsyun/current/scripts/provider-sync.mjs
 NoNewPrivileges=true
 PrivateTmp=true

@@ -19,6 +19,8 @@ PROVIDER_SYNC_PROVIDER=earth-search
 PROVIDER_SYNC_MODE=health
 ```
 
+生产 systemd 服务通过 `PROVIDER_SYNC_PROVIDERS` 按顺序同步三家已验收的公开 STAC 源：`earth-search,copernicus,planetary-computer`。如需临时只验证单个源，可在命令行设置 `PROVIDER_SYNC_PROVIDERS` 覆盖该列表；不要把商业供应商加入定时列表，直到完成合同、价格、授权和交付验收。
+
 `PROVIDER_SYNC_TOKEN` 不提交 Git，不放前端变量。全世界目录同步建议按国家或业务区域分批传入 `bbox`，避免一次请求过大；公开目录每日同步一次即可，健康检查每 5 分钟。商业价格和库存应按供应商限额设为 15～60 分钟，任务拍摄报价始终实时获取。
 
 ## systemd
@@ -32,7 +34,7 @@ systemctl list-timers starsyun-provider-sync.timer
 sudo journalctl -u starsyun-provider-sync.service -n 50 --no-pager
 ```
 
-公开目录每日同步还需要安装 `starsyun-provider-catalog.service` 和 `.timer`。当前服务器每次执行一个配置的公开源；新增源前先在服务器逐个手动运行并观察数量与错误。
+公开目录每日同步还需要安装 `starsyun-provider-catalog.service` 和 `.timer`。服务会按顺序执行三家公开源，并分别写入 `provider_sync_runs`；某一家失败时仍会尝试其余源，最终以失败状态退出供 systemd 告警。
 
 ```bash
 sudo systemctl enable --now starsyun-provider-catalog.timer
