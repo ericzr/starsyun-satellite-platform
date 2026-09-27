@@ -80,7 +80,19 @@ function analysisInputSpec(value: unknown) {
   if (!deliverables.includes(requestedDeliverable as (typeof deliverables)[number])) {
     throw new GatewayError(400, 'requestedDeliverable is invalid');
   }
-  return { objective, requestedDeliverable };
+  const analysisFocus = typeof spec.analysisFocus === 'string' ? spec.analysisFocus.trim() : '';
+  if (analysisFocus.length > 240) throw new GatewayError(400, 'analysisFocus is too long');
+  const targetClasses = Array.isArray(spec.targetClasses)
+    ? spec.targetClasses.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean).slice(0, 20)
+    : [];
+  if (targetClasses.some((item) => item.length > 80)) throw new GatewayError(400, 'targetClasses is invalid');
+  const timeRange = spec.timeRange == null ? {} : parseSpec(spec.timeRange, 'timeRange');
+  const start = typeof timeRange.start === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(timeRange.start) ? timeRange.start : undefined;
+  const end = typeof timeRange.end === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(timeRange.end) ? timeRange.end : undefined;
+  if (timeRange.start != null && !start) throw new GatewayError(400, 'timeRange.start is invalid');
+  if (timeRange.end != null && !end) throw new GatewayError(400, 'timeRange.end is invalid');
+  if (start && end && start > end) throw new GatewayError(400, 'timeRange is reversed');
+  return { objective, requestedDeliverable, analysisFocus, targetClasses, timeRange: { start, end } };
 }
 
 export function parseAnalysisJobInput(body: unknown): AnalysisJobInput {

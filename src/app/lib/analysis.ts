@@ -36,6 +36,9 @@ export interface CreateAnalysisJobInput {
   serviceType: AnalysisServiceType;
   objective: string;
   requestedDeliverable: AnalysisDeliverable;
+  analysisFocus?: string;
+  targetClasses?: string[];
+  timeRange?: { start?: string; end?: string };
 }
 
 async function analysisApiError(response: Response) {
@@ -62,6 +65,9 @@ export async function createAnalysisJob(input: CreateAnalysisJobInput) {
       inputSpec: {
         objective: input.objective,
         requestedDeliverable: input.requestedDeliverable,
+        analysisFocus: input.analysisFocus,
+        targetClasses: input.targetClasses,
+        timeRange: input.timeRange,
       },
     }),
   });

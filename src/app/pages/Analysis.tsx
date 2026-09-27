@@ -6,6 +6,7 @@ import { useInquiryDraft } from '../context/InquiryContext';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Label } from '../components/ui/label';
+import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import {
   Select,
@@ -35,6 +36,10 @@ export function Analysis() {
   const [serviceType, setServiceType] = useState<AnalysisServiceType>('change-detection');
   const [deliverable, setDeliverable] = useState<AnalysisDeliverable>('report-and-data');
   const [objective, setObjective] = useState('');
+  const [analysisFocus, setAnalysisFocus] = useState('');
+  const [targetClasses, setTargetClasses] = useState('');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -85,9 +90,16 @@ export function Analysis() {
         serviceType,
         objective: objective.trim(),
         requestedDeliverable: deliverable,
+        analysisFocus: analysisFocus.trim() || undefined,
+        targetClasses: targetClasses.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean),
+        timeRange: dateStart || dateEnd ? { start: dateStart || undefined, end: dateEnd || undefined } : undefined,
       });
       setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
       setObjective('');
+      setAnalysisFocus('');
+      setTargetClasses('');
+      setDateStart('');
+      setDateEnd('');
       toast.success(zh ? '分析任务已提交' : 'Analysis task submitted');
     } catch (error) {
       toast.error(
@@ -119,6 +131,13 @@ export function Analysis() {
     cancelled: ['已取消', 'Cancelled'],
     failed: ['失败', 'Failed'],
   };
+
+  const templateCards: Array<{ type: AnalysisServiceType; title: [string, string]; description: [string, string] }> = [
+    { type: 'change-detection', title: ['变化检测', 'Change detection'], description: ['对比多期影像，识别新增、减少和变化区域', 'Compare dates and identify additions, removals and changed areas'] },
+    { type: 'feature-extraction', title: ['目标提取', 'Feature extraction'], description: ['提取建筑物、道路、船舶等目标并统计', 'Extract buildings, roads, vessels and other targets'] },
+    { type: 'land-cover', title: ['地物分类', 'Land-cover classification'], description: ['生成分类图、面积统计和类别占比', 'Generate a classification map and area statistics'] },
+    { type: 'time-series', title: ['时间序列', 'Time-series analysis'], description: ['观察植被、水体或城市变化趋势', 'Track vegetation, water or urban trends'] },
+  ];
 
   return (
     <div className="h-full overflow-y-auto">
@@ -176,9 +195,28 @@ export function Analysis() {
             </div>
           ) : (
             <div className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label>{zh ? '1. 选择分析模板' : '1. Choose an analysis template'}</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {templateCards.map((template) => (
+                    <button
+                      key={template.type}
+                      type="button"
+                      onClick={() => setServiceType(template.type)}
+                      className={`rounded-md border p-3 text-left transition-colors ${serviceType === template.type ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50 hover:bg-accent'}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium">{template.title[zh ? 0 : 1]}</span>
+                        {serviceType === template.type && <Badge variant="secondary" className="text-[9px]">{zh ? '已选择' : 'Selected'}</Badge>}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{template.description[zh ? 0 : 1]}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>{zh ? '影像订单' : 'Imagery order'}</Label>
+                  <Label>{zh ? '2. 选择影像订单' : '2. Choose imagery order'}</Label>
                   <Select value={selectedOrderId} onValueChange={setSelectedOrderId}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -189,23 +227,40 @@ export function Analysis() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>{zh ? '分析类型' : 'Analysis type'}</Label>
-                  <Select value={serviceType} onValueChange={(value) => setServiceType(value as AnalysisServiceType)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(serviceLabels) as AnalysisServiceType[]).map((type) => (
-                        <SelectItem key={type} value={type}>{serviceLabels[type][zh ? 0 : 1]}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>{zh ? '当前配方' : 'Selected recipe'}</Label>
+                  <div className="flex h-10 items-center rounded-md border border-border bg-muted/30 px-3 text-sm">
+                    {serviceLabels[serviceType][zh ? 0 : 1]}
+                  </div>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label>{zh ? '分析目标' : 'Analysis objective'}</Label>
+                <Label>{zh ? '3. 分析目标' : '3. Analysis objective'}</Label>
                 <Textarea value={objective} onChange={(event) => setObjective(event.target.value)} rows={3} maxLength={2000} placeholder={zh ? '例如：对比两期影像并输出新增建筑物清单' : 'Example: compare two dates and list newly built structures'} />
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>{zh ? '关注对象（可选）' : 'Target classes (optional)'}</Label>
+                  <Input value={targetClasses} onChange={(event) => setTargetClasses(event.target.value)} placeholder={zh ? '建筑物、道路、堆料区' : 'Buildings, roads, stockpiles'} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{zh ? '分析重点（可选）' : 'Analysis focus (optional)'}</Label>
+                  <Input value={analysisFocus} onChange={(event) => setAnalysisFocus(event.target.value)} maxLength={240} placeholder={zh ? '例如：重点关注矿区扩张' : 'Example: focus on mine expansion'} />
+                </div>
+              </div>
+              {(serviceType === 'change-detection' || serviceType === 'time-series') && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>{zh ? '开始日期（可选）' : 'Start date (optional)'}</Label>
+                    <Input type="date" value={dateStart} onChange={(event) => setDateStart(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>{zh ? '结束日期（可选）' : 'End date (optional)'}</Label>
+                    <Input type="date" value={dateEnd} min={dateStart || undefined} onChange={(event) => setDateEnd(event.target.value)} />
+                  </div>
+                </div>
+              )}
               <div className="space-y-1.5 sm:max-w-sm">
-                <Label>{zh ? '期望交付物' : 'Requested deliverable'}</Label>
+                <Label>{zh ? '4. 期望交付物' : '4. Requested deliverable'}</Label>
                 <Select value={deliverable} onValueChange={(value) => setDeliverable(value as AnalysisDeliverable)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
