@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, PackageOpen, RefreshCw, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useI18n } from '../i18n';
-import { useInquiryDraft } from '../context/InquiryContext';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Label } from '../components/ui/label';
@@ -29,7 +28,6 @@ import { toast } from 'sonner';
 export function Analysis() {
   const { lang } = useI18n();
   const navigate = useNavigate();
-  const { setDraft } = useInquiryDraft();
   const zh = lang === 'zh';
   const [orders, setOrders] = useState<ServerOrder[]>([]);
   const [jobs, setJobs] = useState<AnalysisJob[]>([]);
@@ -79,13 +77,8 @@ export function Analysis() {
     };
   }, [zh]);
 
-  const startInquiry = () => {
-    setDraft({ type: 'analysis' });
-    navigate('/inquiry/new');
-  };
-
   const submitJob = async () => {
-    if ((inputSource === 'purchased-order' && !selectedOrderId) || objective.trim().length < 5) return;
+    if ((inputSource === 'purchased-order' && !selectedOrderId) || (inputSource === 'own-upload' && ownFiles.length === 0) || objective.trim().length < 5) return;
     setBusy(true);
     try {
       const job = await createAnalysisJob({
@@ -151,49 +144,30 @@ export function Analysis() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-16">
         <div className="max-w-2xl">
-          <p className="tech-label text-xs text-primary">{zh ? '空间智能服务' : 'SPATIAL INTELLIGENCE'}</p>
-          <h1 className="mt-3 text-2xl sm:text-3xl">{zh ? '分析服务' : 'Analysis service'}</h1>
+          <p className="tech-label text-xs text-primary">{zh ? '空间智能工作区' : 'SPATIAL INTELLIGENCE WORKBENCH'}</p>
+          <h1 className="mt-3 text-2xl sm:text-3xl">{zh ? '工作台' : 'Workbench'}</h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
             {zh
-              ? '分析服务基于已有卫星影像开展。请先选择已购买的影像，或准备上传自有影像，再提交分析需求。'
-              : 'Analysis starts from imagery you already own. Select a purchased asset or prepare your own upload before submitting an analysis request.'}
+              ? '从影像输入、分析配方到成果交付，所有步骤都在同一个工作区完成。'
+              : 'Move from imagery input to analysis recipe and delivery in one workspace.'}
           </p>
         </div>
-        <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <div className="rounded-lg border border-border bg-panel p-5">
-            <PackageOpen className="size-5 text-primary" />
-            <h2 className="mt-4 text-sm font-medium">{zh ? '选择已购影像' : 'Choose a purchased asset'}</h2>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              {zh ? '从已支付或已交付的订单中选择影像。' : 'Select imagery from a paid or delivered order.'}
-            </p>
-            <Button variant="outline" size="sm" className="mt-5 gap-1.5" onClick={() => navigate('/orders')}>
-              {zh ? '查看订单资产' : 'View order assets'} <ArrowRight className="size-3.5" />
-            </Button>
-          </div>
-          <div className="rounded-lg border border-border bg-panel p-5">
-            <Upload className="size-5 text-primary" />
-            <h2 className="mt-4 text-sm font-medium">{zh ? '上传自有影像' : 'Upload your own imagery'}</h2>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              {zh ? '自有影像请提交需求，由运营确认上传和数据检查方式，不会进入公开数据检索。' : 'For your own imagery, submit a request so the operator can confirm the upload and validation path. It remains separate from public search.'}
-            </p>
-            <Button size="sm" className="mt-5 gap-1.5" onClick={startInquiry}>
-              {zh ? '提交分析需求' : 'Submit analysis request'} <ArrowRight className="size-3.5" />
-            </Button>
-          </div>
-        </div>
 
-        <section className="mt-6 rounded-lg border border-border bg-panel p-5">
+        <section className="mt-8 rounded-lg border border-border bg-panel p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-medium">{zh ? '提交分析任务' : 'Submit an analysis task'}</h2>
+              <h2 className="text-sm font-medium">{zh ? '创建工作区任务' : 'Create a workspace task'}</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                {zh ? '仅能使用已支付、处理中或已交付订单。提交后任务会进入排队，不会伪造已完成结果。' : 'Only paid, in-fulfillment, or delivered orders can be used. Submitted tasks enter a queue; no result is fabricated before processing.'}
+                {zh ? '先选择数据来源，再配置配方和交付物。任务会进入可追溯的处理队列。' : 'Choose a data source, configure a recipe and select deliverables. Every task is traceable.'}
               </p>
             </div>
             {loading && <RefreshCw className="size-4 animate-spin text-muted-foreground" />}
           </div>
           {loadError ? (
-            <p className="mt-4 text-sm text-destructive">{loadError}</p>
+            <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-4">
+              <p className="text-sm text-destructive">{/customer session required|session expired/iu.test(loadError) ? (zh ? '请先登录后使用工作台。' : 'Sign in to use the workbench.') : loadError}</p>
+              {/customer session required|session expired/iu.test(loadError) && <Button size="sm" className="mt-3" onClick={() => navigate('/login')}>{zh ? '登录' : 'Sign in'} <ArrowRight className="ml-1 size-3.5" /></Button>}
+            </div>
           ) : (
             <div className="mt-4 space-y-4">
               <div className="space-y-2">
@@ -216,23 +190,25 @@ export function Analysis() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label>{zh ? '2. 影像来源' : '2. Imagery source'}</Label>
+                <Label>{zh ? '2. 数据来源' : '2. Data source'}</Label>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button type="button" onClick={() => setInputSource('purchased-order')} className={`rounded-md border p-3 text-left text-xs ${inputSource === 'purchased-order' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
+                    <PackageOpen className="mb-2 size-4 text-primary" />
                     <span className="font-medium">{zh ? '已购影像' : 'Purchased imagery'}</span>
-                    <span className="mt-1 block text-muted-foreground">{zh ? '使用已支付或已交付订单' : 'Use a paid or delivered order'}</span>
+                    <span className="mt-1 block text-muted-foreground">{zh ? '使用已支付或已交付订单中的数据' : 'Use data from a paid or delivered order'}</span>
                   </button>
                   <button type="button" onClick={() => setInputSource('own-upload')} className={`rounded-md border p-3 text-left text-xs ${inputSource === 'own-upload' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
+                    <Upload className="mb-2 size-4 text-primary" />
                     <span className="font-medium">{zh ? '自有影像' : 'Own imagery'}</span>
-                    <span className="mt-1 block text-muted-foreground">{zh ? '上传 GeoTIFF、GeoJSON、KML 或 ZIP' : 'Upload GeoTIFF, GeoJSON, KML or ZIP'}</span>
+                    <span className="mt-1 block text-muted-foreground">{zh ? '直接上传 GeoTIFF、GeoJSON、KML 或 ZIP' : 'Upload GeoTIFF, GeoJSON, KML or ZIP directly'}</span>
                   </button>
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>{zh ? '3. 选择影像订单' : '3. Choose imagery order'}</Label>
+                  <Label>{zh ? '3. 绑定影像资产' : '3. Attach imagery'}</Label>
                   <Select value={selectedOrderId} onValueChange={setSelectedOrderId} disabled={inputSource !== 'purchased-order'}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={inputSource === 'purchased-order' ? (zh ? '选择已购订单' : 'Select a purchased order') : (zh ? '自有影像无需订单' : 'No order for own imagery')} /></SelectTrigger>
                     <SelectContent>
                       {eligibleOrders.map((order) => (
                         <SelectItem key={order.id} value={order.id}>{order.orderNo} · {order.status}</SelectItem>
@@ -241,7 +217,7 @@ export function Analysis() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>{zh ? '当前配方' : 'Selected recipe'}</Label>
+                  <Label>{zh ? '当前分析配方' : 'Analysis recipe'}</Label>
                   <div className="flex h-10 items-center rounded-md border border-border bg-muted/30 px-3 text-sm">
                     {serviceLabels[serviceType][zh ? 0 : 1]}
                   </div>
@@ -251,7 +227,7 @@ export function Analysis() {
                 <div className="space-y-1.5">
                   <Label>{zh ? '自有影像文件' : 'Own imagery files'}</Label>
                   <Input type="file" multiple accept=".tif,.tiff,.cog,.geojson,.json,.zip,.kml,.kmz" onChange={(event) => setOwnFiles(Array.from(event.target.files ?? []))} />
-                  <p className="text-[11px] text-muted-foreground">{zh ? '文件会直传私有 COS，服务器不会接收影像内容。提交后先校验，再进入人工/自动处理队列。' : 'Files go directly to private COS. The web server never receives raster bytes; validation runs before processing.'}</p>
+                  <p className="text-[11px] text-muted-foreground">{zh ? '文件会直传私有 COS，服务器不会接收影像内容。上传完成后先校验，再进入处理队列。' : 'Files go directly to private COS. The web server never receives raster bytes; validation runs before processing.'}</p>
                   {ownFiles.length > 0 && <p className="text-xs text-muted-foreground">{ownFiles.map((file) => file.name).join(' · ')}</p>}
                 </div>
               )}
@@ -292,7 +268,7 @@ export function Analysis() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={() => void submitJob()} disabled={busy || objective.trim().length < 5 || (inputSource === 'purchased-order' && !selectedOrderId)}>
+              <Button onClick={() => void submitJob()} disabled={busy || objective.trim().length < 5 || (inputSource === 'purchased-order' && !selectedOrderId) || (inputSource === 'own-upload' && ownFiles.length === 0)}>
                 {busy && <RefreshCw className="mr-1.5 size-3.5 animate-spin" />}
                 {busy ? (zh ? '提交中…' : 'Submitting…') : (zh ? '提交分析任务' : 'Submit analysis task')}
               </Button>
