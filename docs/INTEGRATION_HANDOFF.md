@@ -76,7 +76,8 @@ type ProviderAdapter = {
 
 ## 已落地的业务接口
 
-- `GET/POST /api/analysis/jobs`：客户查询或创建分析作业；作业必须关联本人询价或已付款订单。
+- `GET/POST /api/analysis/jobs`：客户查询或创建分析作业；已购影像任务关联本人订单/询价，自有影像任务先登记 `own-upload`，上传文件完成校验后再进入处理队列。
+- `GET/POST /api/analysis/jobs/:id/input-upload`、`POST /api/analysis/jobs/:id/input-upload/:assetId/complete`：自有影像短时 COS 直传和完成校验；服务器不接收影像字节，也不向浏览器暴露 COS 密钥。
 - `GET /api/wallet`：客户查询指定币种余额与账本；余额由服务端 RPC 从已记账交易推导。
 - `POST /api/wallet/holds`：客户为本人待付款订单冻结余额，金额、币种和订单总额必须一致，并且必须使用幂等键。
 - `GET/POST /api/admin/provider-quotes`、`PATCH /api/admin/provider-quotes/:id`：运营人员登记和回写供应商报价、条款和状态。

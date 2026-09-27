@@ -15,6 +15,21 @@ export type AnalysisJobStatus =
   | 'failed';
 
 export type AnalysisDeliverable = 'analysis-report' | 'geospatial-data' | 'report-and-data';
+export type AnalysisInputSource = 'purchased-order' | 'analysis-inquiry' | 'own-upload';
+
+export interface AnalysisInputAsset {
+  id: string;
+  jobId: string;
+  fileName: string;
+  contentType: string;
+  objectKey: string;
+  bucket: string;
+  sizeBytes?: number;
+  expectedSizeBytes?: number;
+  status: 'pending' | 'ready' | 'revoked';
+  createdAt: string;
+  completedAt?: string;
+}
 
 export interface AnalysisJob {
   id: string;
@@ -33,6 +48,7 @@ export interface AnalysisJob {
 export interface CreateAnalysisJobInput {
   inquiryId?: string;
   orderId?: string;
+  inputSource?: AnalysisInputSource;
   serviceType: AnalysisServiceType;
   objective: string;
   requestedDeliverable: AnalysisDeliverable;
@@ -61,6 +77,7 @@ export async function createAnalysisJob(input: CreateAnalysisJobInput) {
     body: JSON.stringify({
       inquiryId: input.inquiryId,
       orderId: input.orderId,
+      inputSource: input.inputSource,
       serviceType: input.serviceType,
       inputSpec: {
         objective: input.objective,
@@ -75,4 +92,28 @@ export async function createAnalysisJob(input: CreateAnalysisJobInput) {
   const payload = (await response.json()) as { job?: AnalysisJob };
   if (!payload.job) throw new Error('Analysis API returned no job');
   return payload.job;
+}
+
+export async function createAnalysisInputUpload(jobId: string, file: File) {
+  const response = await fetch(`/api/analysis/jobs/${encodeURIComponent(jobId)}/input-upload`, {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: file.name, contentType: file.type, sizeBytes: file.size }),
+  });
+  if (!response.ok) throw await analysisApiError(response);
+  const payload = (await response.json()) as { asset?: AnalysisInputAsset; upload?: { url: string; method: 'PUT'; headers?: Record<string, string> } };
+  if (!payload.asset || !payload.upload?.url) throw new Error('Analysis upload initialization returned no upload URL');
+  const upload = await fetch(payload.upload.url, { method: payload.upload.method, headers: payload.upload.headers, body: file });
+  if (!upload.ok) throw new Error(`Analysis upload failed (${upload.status})`);
+  const complete = await fetch(`/api/analysis/jobs/${encodeURIComponent(jobId)}/input-upload/${encodeURIComponent(payload.asset.id)}/complete`, { method: 'POST', credentials: 'include' });
+  if (!complete.ok) throw await analysisApiError(complete);
+  const completed = (await complete.json()) as { asset?: AnalysisInputAsset };
+  if (!completed.asset) throw new Error('Analysis upload completion returned no asset');
+  return completed.asset;
+}
+
+export async function loadAnalysisInputAssets(jobId: string) {
+  const response = await fetch(`/api/analysis/jobs/${encodeURIComponent(jobId)}/input-upload`, { credentials: 'include' });
+  if (!response.ok) throw await analysisApiError(response);
+  const payload = (await response.json()) as { assets?: AnalysisInputAsset[] };
+  return Array.isArray(payload.assets) ? payload.assets : [];
 }

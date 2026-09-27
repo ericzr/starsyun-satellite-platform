@@ -18,6 +18,7 @@ import {
 import { loadCustomerOrders, type ServerOrder } from '../lib/orders';
 import {
   createAnalysisJob,
+  createAnalysisInputUpload,
   loadAnalysisJobs,
   type AnalysisDeliverable,
   type AnalysisJob,
@@ -33,6 +34,8 @@ export function Analysis() {
   const [orders, setOrders] = useState<ServerOrder[]>([]);
   const [jobs, setJobs] = useState<AnalysisJob[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState('');
+  const [inputSource, setInputSource] = useState<'purchased-order' | 'own-upload'>('purchased-order');
+  const [ownFiles, setOwnFiles] = useState<File[]>([]);
   const [serviceType, setServiceType] = useState<AnalysisServiceType>('change-detection');
   const [deliverable, setDeliverable] = useState<AnalysisDeliverable>('report-and-data');
   const [objective, setObjective] = useState('');
@@ -82,11 +85,12 @@ export function Analysis() {
   };
 
   const submitJob = async () => {
-    if (!selectedOrderId || objective.trim().length < 5) return;
+    if ((inputSource === 'purchased-order' && !selectedOrderId) || objective.trim().length < 5) return;
     setBusy(true);
     try {
       const job = await createAnalysisJob({
-        orderId: selectedOrderId,
+        orderId: inputSource === 'purchased-order' ? selectedOrderId : undefined,
+        inputSource,
         serviceType,
         objective: objective.trim(),
         requestedDeliverable: deliverable,
@@ -94,12 +98,16 @@ export function Analysis() {
         targetClasses: targetClasses.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean),
         timeRange: dateStart || dateEnd ? { start: dateStart || undefined, end: dateEnd || undefined } : undefined,
       });
+      if (inputSource === 'own-upload' && ownFiles.length) {
+        for (const file of ownFiles) await createAnalysisInputUpload(job.id, file);
+      }
       setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
       setObjective('');
       setAnalysisFocus('');
       setTargetClasses('');
       setDateStart('');
       setDateEnd('');
+      setOwnFiles([]);
       toast.success(zh ? '分析任务已提交' : 'Analysis task submitted');
     } catch (error) {
       toast.error(
@@ -186,13 +194,6 @@ export function Analysis() {
           </div>
           {loadError ? (
             <p className="mt-4 text-sm text-destructive">{loadError}</p>
-          ) : eligibleOrders.length === 0 ? (
-            <div className="mt-4 rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-              {zh ? '暂无可用订单。请先完成供应商报价、支付和交付，或提交自有影像分析需求。' : 'No eligible orders yet. Complete supplier quoting, payment, and delivery first, or submit a request for your own imagery.'}
-              <Button variant="outline" size="sm" className="mt-3" onClick={startInquiry}>
-                {zh ? '提交分析需求' : 'Submit analysis request'} <ArrowRight className="ml-1 size-3.5" />
-              </Button>
-            </div>
           ) : (
             <div className="mt-4 space-y-4">
               <div className="space-y-2">
@@ -214,10 +215,23 @@ export function Analysis() {
                   ))}
                 </div>
               </div>
+              <div className="space-y-1.5">
+                <Label>{zh ? '2. 影像来源' : '2. Imagery source'}</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={() => setInputSource('purchased-order')} className={`rounded-md border p-3 text-left text-xs ${inputSource === 'purchased-order' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
+                    <span className="font-medium">{zh ? '已购影像' : 'Purchased imagery'}</span>
+                    <span className="mt-1 block text-muted-foreground">{zh ? '使用已支付或已交付订单' : 'Use a paid or delivered order'}</span>
+                  </button>
+                  <button type="button" onClick={() => setInputSource('own-upload')} className={`rounded-md border p-3 text-left text-xs ${inputSource === 'own-upload' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
+                    <span className="font-medium">{zh ? '自有影像' : 'Own imagery'}</span>
+                    <span className="mt-1 block text-muted-foreground">{zh ? '上传 GeoTIFF、GeoJSON、KML 或 ZIP' : 'Upload GeoTIFF, GeoJSON, KML or ZIP'}</span>
+                  </button>
+                </div>
+              </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>{zh ? '2. 选择影像订单' : '2. Choose imagery order'}</Label>
-                  <Select value={selectedOrderId} onValueChange={setSelectedOrderId}>
+                  <Label>{zh ? '3. 选择影像订单' : '3. Choose imagery order'}</Label>
+                  <Select value={selectedOrderId} onValueChange={setSelectedOrderId} disabled={inputSource !== 'purchased-order'}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {eligibleOrders.map((order) => (
@@ -233,8 +247,16 @@ export function Analysis() {
                   </div>
                 </div>
               </div>
+              {inputSource === 'own-upload' && (
+                <div className="space-y-1.5">
+                  <Label>{zh ? '自有影像文件' : 'Own imagery files'}</Label>
+                  <Input type="file" multiple accept=".tif,.tiff,.cog,.geojson,.json,.zip,.kml,.kmz" onChange={(event) => setOwnFiles(Array.from(event.target.files ?? []))} />
+                  <p className="text-[11px] text-muted-foreground">{zh ? '文件会直传私有 COS，服务器不会接收影像内容。提交后先校验，再进入人工/自动处理队列。' : 'Files go directly to private COS. The web server never receives raster bytes; validation runs before processing.'}</p>
+                  {ownFiles.length > 0 && <p className="text-xs text-muted-foreground">{ownFiles.map((file) => file.name).join(' · ')}</p>}
+                </div>
+              )}
               <div className="space-y-1.5">
-                <Label>{zh ? '3. 分析目标' : '3. Analysis objective'}</Label>
+                <Label>{zh ? '4. 分析目标' : '4. Analysis objective'}</Label>
                 <Textarea value={objective} onChange={(event) => setObjective(event.target.value)} rows={3} maxLength={2000} placeholder={zh ? '例如：对比两期影像并输出新增建筑物清单' : 'Example: compare two dates and list newly built structures'} />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -260,7 +282,7 @@ export function Analysis() {
                 </div>
               )}
               <div className="space-y-1.5 sm:max-w-sm">
-                <Label>{zh ? '4. 期望交付物' : '4. Requested deliverable'}</Label>
+                <Label>{zh ? '5. 期望交付物' : '5. Requested deliverable'}</Label>
                 <Select value={deliverable} onValueChange={(value) => setDeliverable(value as AnalysisDeliverable)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -270,7 +292,7 @@ export function Analysis() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={() => void submitJob()} disabled={busy || objective.trim().length < 5 || !selectedOrderId}>
+              <Button onClick={() => void submitJob()} disabled={busy || objective.trim().length < 5 || (inputSource === 'purchased-order' && !selectedOrderId)}>
                 {busy && <RefreshCw className="mr-1.5 size-3.5 animate-spin" />}
                 {busy ? (zh ? '提交中…' : 'Submitting…') : (zh ? '提交分析任务' : 'Submit analysis task')}
               </Button>

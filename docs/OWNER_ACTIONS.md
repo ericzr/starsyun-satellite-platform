@@ -6,8 +6,9 @@
 
 1. **企业支付宝**：“电脑网站支付”已开通，StarSyun 独立应用已创建并在审核中，密钥、公钥、回调和生产网关已准备。现在只需等待审核；通过后将凭据写入腾讯云服务器，再完成小额支付、重复回调、退款和对账验收。接入时不修改其他业务应用，详见 [支付接入与业务隔离](./PAYMENT_INTEGRATION.md)。
 2. **COS 真实交付验收**：向私有 `delivery` 桶/前缀上传一个非敏感测试压缩包，保留文件名、Object Key、实际字节数和 SHA-256。随后由管理员以测试订单完成“登记 → 标记交付 → 客户下载 → 撤销 → 审计”流程。子账号权限保持 `GetObject`、`HeadObject`、`PutObject`，不增加 `DeleteObject`。
-3. **行政区包来源记录**：按你确认，该包来自国土资源部公开数据，无需另行购买授权。请补充公开数据页面或发布版本信息，以便导入批次记录 `source_url/source_version` 并完成追溯。
-4. **首个商业供应商**：在 UP42 和 SkyWatch 中选择一个作为首个聚合入口，申请 sandbox、价格表、区域授权、下载/再分发许可、配额、SLA 与 webhook 文档。完成 sandbox 全链路前，页面只允许显示“询价”，不得显示可直接购买库存。
+3. **分析输入桶与 Supabase 迁移**：先按 [Supabase 迁移与备份](./SUPABASE_MIGRATIONS_AND_BACKUP.md) 完成生产备份，再在 SQL Editor 依次执行 `014_analysis_workbench.sql`、`015_analysis_input_assets.sql`。为私有 COS 配置 `COS_ANALYSIS_BUCKET`（或确认复用交付桶的 `analysis-input/` 前缀），并为 `https://starsyun.com` 配置仅允许 `PUT/HEAD` 的 CORS。
+4. **行政区包来源记录**：按你确认，该包来自国土资源部公开数据，无需另行购买授权。请补充公开数据页面或发布版本信息，以便导入批次记录 `source_url/source_version` 并完成追溯。
+5. **首个商业供应商**：在 UP42 和 SkyWatch 中选择一个作为首个聚合入口，申请 sandbox、价格表、区域授权、下载/再分发许可、配额、SLA 与 webhook 文档。完成 sandbox 全链路前，页面只允许显示“询价”，不得显示可直接购买库存。
 
 ## 随后推进
 

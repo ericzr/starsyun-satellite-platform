@@ -25,6 +25,8 @@ for (const migration of [
   '011_normalize_paypal_provider.sql',
   '012_inquiry_capture_window.sql',
   '013_provider_sync_runs.sql',
+  '014_analysis_workbench.sql',
+  '015_analysis_input_assets.sql',
 ]) {
   requireFile(`supabase/migrations/${migration}`);
 }

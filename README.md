@@ -126,6 +126,8 @@ cp .env.example .env
 
 服务端运行配置（Supabase Secret Key、认证会话、COS、供应商和支付密钥）只能写入腾讯云服务器的 `/etc/starsyun/starsyun.env`，详见 [接入交接清单](docs/INTEGRATION_HANDOFF.md)。
 
+Supabase 迁移执行和生产备份步骤见 [Supabase 迁移与备份](docs/SUPABASE_MIGRATIONS_AND_BACKUP.md)；分析工作台的 YOLO、SAM、GDAL、QGIS、GEE 与报告模型边界见 [分析工具链](docs/ANALYSIS_TOOLCHAIN.md)。
+
 地图图层说明：地图右下角“切换图层”提供 Carto、OpenFreeMap、OpenStreetMap 三种底图，以及 NASA、Sentinel-2、Esri、AICGIS、天地图影像图层。AICGIS 通过 `VITE_AICGIS_TILES_URL` 配置瓦片模板；天地图通过 `VITE_TIANDITU_TOKEN` 配置官方 Token，未配置凭据时入口会自动置灰。未配置 `VITE_CARTO_API_KEY` 时，Carto 入口会自动使用 OpenFreeMap 作为免费回退，避免出现空白地图。Google Earth、吉林一号、四维高景等商业图源仅在取得授权并配置专用服务后接入。接口、许可和接入门槛见 [图源清单](docs/MAP_SOURCES.md)。
 
 可选影像瓦片地址：`VITE_SENTINEL2_TILES_URL`、`VITE_ESRI_IMAGERY_TILES_URL`。如服务商调整访问策略，可通过环境变量替换，避免修改前端代码。

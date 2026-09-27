@@ -17,9 +17,21 @@ function config() {
   return { secretId, secretKey, bucket, region, ttl };
 }
 
+function bucketConfig(kind: 'delivery' | 'analysis' = 'delivery') {
+  const base = config();
+  if (kind !== 'analysis') return base;
+  const bucket = process.env.COS_ANALYSIS_BUCKET?.trim() || base.bucket;
+  return { ...base, bucket };
+}
+
 /** The delivery bucket is intentionally server-only; it is never sent to the browser. */
 export function deliveryBucket() {
   return config().bucket;
+}
+
+/** Analysis inputs use a separate private bucket when configured. */
+export function analysisBucket() {
+  return bucketConfig('analysis').bucket;
 }
 
 function sha1(value: string) {
@@ -30,7 +42,7 @@ function hmac(key: string, value: string) {
   return createHmac('sha1', key).update(value).digest('hex');
 }
 
-type SignedUrlMethod = 'GET' | 'HEAD';
+type SignedUrlMethod = 'GET' | 'HEAD' | 'PUT';
 
 export type CosObjectMetadata = {
   sizeBytes?: number;
@@ -39,8 +51,8 @@ export type CosObjectMetadata = {
   lastModified?: string;
 };
 
-export function signedCosObjectUrl(objectKey: string, requestedTtl?: number, method: SignedUrlMethod = 'GET') {
-  const { secretId, secretKey, bucket, region, ttl } = config();
+export function signedCosObjectUrl(objectKey: string, requestedTtl?: number, method: SignedUrlMethod = 'GET', kind: 'delivery' | 'analysis' = 'delivery') {
+  const { secretId, secretKey, bucket, region, ttl } = bucketConfig(kind);
   // COS uses the decoded object key in the canonical pathname while the
   // browser URL itself must be percent-encoded. This mirrors the official
   // cos-nodejs-sdk-v5 signer and keeps keys containing spaces/unicode valid.
@@ -54,7 +66,7 @@ export function signedCosObjectUrl(objectKey: string, requestedTtl?: number, met
   // canonical headers, each separated by exactly one newline. The previous
   // implementation inserted an extra blank line and encoded the Host value,
   // which makes otherwise valid URLs fail against private buckets.
-  const httpString = `${method.toLowerCase()}\n/${objectKey}\n\nhost=${rfc3986(host)}\n`;
+  const httpString = `${method.toLowerCase()}\n/${safeKey}\n\nhost=${rfc3986(host)}\n`;
   const stringToSign = `sha1\n${keyTime}\n${sha1(httpString)}\n`;
   const signature = hmac(signKey, stringToSign);
   const query = new URLSearchParams({
@@ -76,14 +88,23 @@ export function signedCosObjectUrl(objectKey: string, requestedTtl?: number, met
  */
 export async function headDeliveryObject(objectKey: string): Promise<CosObjectMetadata> {
   const { url } = signedCosObjectUrl(objectKey, 60, 'HEAD');
+  return headSignedObject(url, 'delivery object');
+}
+
+export async function headAnalysisObject(objectKey: string): Promise<CosObjectMetadata> {
+  const { url } = signedCosObjectUrl(objectKey, 60, 'HEAD', 'analysis');
+  return headSignedObject(url, 'analysis input object');
+}
+
+async function headSignedObject(url: string, label: string): Promise<CosObjectMetadata> {
   let response: Response;
   try {
     response = await fetch(url, { method: 'HEAD', redirect: 'error', signal: AbortSignal.timeout(10_000) });
   } catch {
-    throw new GatewayError(502, 'delivery object verification failed');
+    throw new GatewayError(502, `${label} verification failed`);
   }
-  if (response.status === 404) throw new GatewayError(404, 'delivery object was not found in COS');
-  if (!response.ok) throw new GatewayError(502, `delivery object verification failed (${response.status})`);
+  if (response.status === 404) throw new GatewayError(404, `${label} was not found in COS`);
+  if (!response.ok) throw new GatewayError(502, `${label} verification failed (${response.status})`);
   const contentLengthHeader = response.headers.get('content-length');
   const contentLength = contentLengthHeader == null ? Number.NaN : Number(contentLengthHeader);
   return {

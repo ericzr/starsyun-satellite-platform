@@ -32,6 +32,8 @@ import adminArea from '../api/admin/areas/[id]';
 import catalogSources from '../api/catalog/sources';
 import catalogProducts from '../api/catalog/products';
 import analysisJobs from '../api/analysis/jobs';
+import analysisInputUpload from '../api/analysis/jobs/[id]/input-upload';
+import analysisInputUploadComplete from '../api/analysis/jobs/[id]/input-upload/[assetId]/complete';
 import adminAnalysisJobs from '../api/admin/analysis-jobs';
 import adminAnalysisJob from '../api/admin/analysis-jobs/[id]';
 import adminProviderQuotes from '../api/admin/provider-quotes';
@@ -58,6 +60,8 @@ interface ApiRoute {
 }
 
 const routes: ApiRoute[] = [
+  { pattern: /^\/api\/analysis\/jobs\/([^/]+)\/input-upload\/([^/]+)\/complete\/?$/, handler: analysisInputUploadComplete, parameters: { id: 1, assetId: 2 } },
+  { pattern: /^\/api\/analysis\/jobs\/([^/]+)\/input-upload\/?$/, handler: analysisInputUpload, parameter: 'id' },
   { pattern: /^\/api\/admin\/analysis-jobs\/([^/]+)\/?$/, handler: adminAnalysisJob, parameter: 'id' },
   { pattern: /^\/api\/admin\/analysis-jobs\/?$/, handler: adminAnalysisJobs },
   { pattern: /^\/api\/admin\/provider-quotes\/([^/]+)\/?$/, handler: adminProviderQuote, parameter: 'id' },
