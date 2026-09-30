@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, PackageOpen, RefreshCw, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useI18n } from '../i18n';
+import { useUser } from '../context/UserContext';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Label } from '../components/ui/label';
@@ -14,10 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import { loadCustomerOrders, type ServerOrder } from '../lib/orders';
+import { loadAdminOrders, loadCustomerOrders, type ServerOrder } from '../lib/orders';
 import {
   createAnalysisJob,
   createAnalysisInputUpload,
+  loadAdminAnalysisJobs,
   loadAnalysisJobs,
   type AnalysisDeliverable,
   type AnalysisJob,
@@ -27,6 +29,7 @@ import { toast } from 'sonner';
 
 export function Analysis() {
   const { lang } = useI18n();
+  const { user } = useUser();
   const navigate = useNavigate();
   const zh = lang === 'zh';
   const [orders, setOrders] = useState<ServerOrder[]>([]);
@@ -51,7 +54,9 @@ export function Analysis() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([loadCustomerOrders(), loadAnalysisJobs()])
+    const loadOrders = user?.role === 'admin' ? loadAdminOrders : loadCustomerOrders;
+    const loadJobs = user?.role === 'admin' ? loadAdminAnalysisJobs : loadAnalysisJobs;
+    Promise.all([loadOrders(), loadJobs()])
       .then(([nextOrders, nextJobs]) => {
         if (!active) return;
         setOrders(nextOrders);
@@ -75,7 +80,7 @@ export function Analysis() {
     return () => {
       active = false;
     };
-  }, [zh]);
+  }, [user?.role, zh]);
 
   const submitJob = async () => {
     if ((inputSource === 'purchased-order' && !selectedOrderId) || (inputSource === 'own-upload' && ownFiles.length === 0) || objective.trim().length < 5) return;
@@ -133,33 +138,24 @@ export function Analysis() {
     failed: ['失败', 'Failed'],
   };
 
-  const templateCards: Array<{ type: AnalysisServiceType; title: [string, string]; description: [string, string] }> = [
-    { type: 'change-detection', title: ['变化检测', 'Change detection'], description: ['对比多期影像，识别新增、减少和变化区域', 'Compare dates and identify additions, removals and changed areas'] },
-    { type: 'feature-extraction', title: ['目标提取', 'Feature extraction'], description: ['提取建筑物、道路、船舶等目标并统计', 'Extract buildings, roads, vessels and other targets'] },
-    { type: 'land-cover', title: ['地物分类', 'Land-cover classification'], description: ['生成分类图、面积统计和类别占比', 'Generate a classification map and area statistics'] },
-    { type: 'time-series', title: ['时间序列', 'Time-series analysis'], description: ['观察植被、水体或城市变化趋势', 'Track vegetation, water or urban trends'] },
+  const templateCards: Array<{ type: AnalysisServiceType; title: [string, string] }> = [
+    { type: 'change-detection', title: ['变化检测', 'Change detection'] },
+    { type: 'feature-extraction', title: ['目标提取', 'Feature extraction'] },
+    { type: 'land-cover', title: ['地物分类', 'Land-cover classification'] },
+    { type: 'time-series', title: ['时间序列', 'Time-series analysis'] },
   ];
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-16">
         <div className="max-w-2xl">
-          <p className="tech-label text-xs text-primary">{zh ? '空间智能工作区' : 'SPATIAL INTELLIGENCE WORKBENCH'}</p>
-          <h1 className="mt-3 text-2xl sm:text-3xl">{zh ? '工作台' : 'Workbench'}</h1>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            {zh
-              ? '从影像输入、分析配方到成果交付，所有步骤都在同一个工作区完成。'
-              : 'Move from imagery input to analysis recipe and delivery in one workspace.'}
-          </p>
+          <h1 className="text-2xl sm:text-3xl">{zh ? '工作台' : 'Workbench'}</h1>
         </div>
 
         <section className="mt-8 rounded-lg border border-border bg-panel p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-medium">{zh ? '创建工作区任务' : 'Create a workspace task'}</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {zh ? '先选择数据来源，再配置配方和交付物。任务会进入可追溯的处理队列。' : 'Choose a data source, configure a recipe and select deliverables. Every task is traceable.'}
-              </p>
             </div>
             {loading && <RefreshCw className="size-4 animate-spin text-muted-foreground" />}
           </div>
@@ -184,7 +180,6 @@ export function Analysis() {
                         <span className="text-xs font-medium">{template.title[zh ? 0 : 1]}</span>
                         {serviceType === template.type && <Badge variant="secondary" className="text-[9px]">{zh ? '已选择' : 'Selected'}</Badge>}
                       </div>
-                      <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{template.description[zh ? 0 : 1]}</p>
                     </button>
                   ))}
                 </div>
@@ -195,12 +190,10 @@ export function Analysis() {
                   <button type="button" onClick={() => setInputSource('purchased-order')} className={`rounded-md border p-3 text-left text-xs ${inputSource === 'purchased-order' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
                     <PackageOpen className="mb-2 size-4 text-primary" />
                     <span className="font-medium">{zh ? '已购影像' : 'Purchased imagery'}</span>
-                    <span className="mt-1 block text-muted-foreground">{zh ? '使用已支付或已交付订单中的数据' : 'Use data from a paid or delivered order'}</span>
                   </button>
                   <button type="button" onClick={() => setInputSource('own-upload')} className={`rounded-md border p-3 text-left text-xs ${inputSource === 'own-upload' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
                     <Upload className="mb-2 size-4 text-primary" />
                     <span className="font-medium">{zh ? '自有影像' : 'Own imagery'}</span>
-                    <span className="mt-1 block text-muted-foreground">{zh ? '直接上传 GeoTIFF、GeoJSON、KML 或 ZIP' : 'Upload GeoTIFF, GeoJSON, KML or ZIP directly'}</span>
                   </button>
                 </div>
               </div>

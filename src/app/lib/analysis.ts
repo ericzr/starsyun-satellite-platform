@@ -69,6 +69,13 @@ export async function loadAnalysisJobs() {
   return Array.isArray(payload.jobs) ? payload.jobs : [];
 }
 
+export async function loadAdminAnalysisJobs() {
+  const response = await fetch('/api/admin/analysis-jobs', { credentials: 'include' });
+  if (!response.ok) throw await analysisApiError(response);
+  const payload = (await response.json()) as { jobs?: AnalysisJob[] };
+  return Array.isArray(payload.jobs) ? payload.jobs : [];
+}
+
 export async function createAnalysisJob(input: CreateAnalysisJobInput) {
   const response = await fetch('/api/analysis/jobs', {
     method: 'POST',

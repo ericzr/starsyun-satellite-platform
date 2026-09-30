@@ -21,6 +21,7 @@ interface RegisterData {
 interface UserContextValue {
   user: User | null;
   isAuthenticated: boolean;
+  authLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   register: (data: RegisterData) => Promise<void>;
@@ -54,6 +55,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored ? JSON.parse(stored) : null;
   });
+  const [authLoading, setAuthLoading] = useState(true);
 
   const isAuthenticated = !!user;
 
@@ -62,15 +64,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
     fetch('/api/auth/session', { credentials: 'include' })
       .then(async (response) => {
         if (!response.ok) {
-          // The server session is authoritative in production. Clear stale
-          // local UI state instead of allowing it to impersonate a session.
           if (!mockAuthEnabled() && active) setUser(null);
           return;
         }
         const payload = (await response.json()) as { user?: SessionUser };
         if (active && payload.user) setUser(userFromSession(payload.user));
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => active && setAuthLoading(false));
     return () => { active = false; };
   }, []);
 
@@ -167,6 +168,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isAuthenticated,
+        authLoading,
         login,
         logout,
         register,

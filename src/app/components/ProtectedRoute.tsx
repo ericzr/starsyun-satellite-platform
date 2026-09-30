@@ -7,8 +7,12 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
-  const { isAuthenticated, user } = useUser();
+  const { isAuthenticated, authLoading, user } = useUser();
   const location = useLocation();
+
+  if (authLoading) {
+    return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading…</div>;
+  }
 
   if (!isAuthenticated) {
     // 未登录，跳转到登录页，并记录当前页面用于登录后返回
